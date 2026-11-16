@@ -78,45 +78,50 @@ jobs:
 
       - name: Download pinned Byparr source
         shell: pwsh
-        run: ..\\scripts\\Get-Upstream.ps1
+        run: ..\scripts\Get-Upstream.ps1
+
+      - name: Set up Python 3.14 for the engine
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
 
       - name: Install locked Byparr engine dependencies
-        working-directory: ../vendor/Byparr
+        working-directory: vendor/Byparr
         shell: pwsh
         run: uv sync --locked
 
       - name: Fetch verified browser runtime into the application
-        working-directory: ../vendor/Byparr
+        working-directory: vendor/Byparr
         shell: pwsh
         env:
-          INVISIBLE_PLAYWRIGHT_CACHE_DIR: ${{ github.workspace }}\\manager\\dist\\ByparrManager\\engine\\browser-cache
+          INVISIBLE_PLAYWRIGHT_CACHE_DIR: ${{ github.workspace }}\manager\dist\ByparrManager\engine\browser-cache
         run: |
           New-Item -ItemType Directory -Force -Path $env:INVISIBLE_PLAYWRIGHT_CACHE_DIR | Out-Null
           uv run python -m invisible_playwright fetch
 
       - name: Install engine packager
-        working-directory: ../vendor/Byparr
+        working-directory: vendor/Byparr
         shell: pwsh
-        run: uv pip install --python .venv\\Scripts\\python.exe pyinstaller
+        run: uv pip install --python .venv\Scripts\python.exe pyinstaller
 
       - name: Package Byparr engine as a standalone Windows executable
-        working-directory: ../vendor/Byparr
+        working-directory: vendor/Byparr
         shell: pwsh
         run: |
-          $engineOutput = Join-Path $env:GITHUB_WORKSPACE "manager\\dist\\ByparrManager\\engine"
+          $engineOutput = Join-Path $env:GITHUB_WORKSPACE "manager\dist\ByparrManager\engine"
           $engineWork = Join-Path $env:RUNNER_TEMP "byparr-engine-pyinstaller"
           uv run python -m PyInstaller --noconfirm --clean --onedir --name ByparrEngine --distpath $engineOutput --workpath $engineWork --collect-all invisible_playwright --collect-all invisible_core --collect-all playwright --collect-all playwright_captcha --collect-all fastapi --collect-all pydantic --collect-all pydantic_settings --collect-all trafilatura --collect-all tzlocal main.py
 
       - name: Smoke test the packaged engine and bundled browser
         shell: pwsh
         env:
-          INVISIBLE_PLAYWRIGHT_CACHE_DIR: ${{ github.workspace }}\\manager\\dist\\ByparrManager\\engine\\browser-cache
+          INVISIBLE_PLAYWRIGHT_CACHE_DIR: ${{ github.workspace }}\manager\dist\ByparrManager\engine\browser-cache
           HOST: 127.0.0.1
           PORT: "8191"
           BROWSER_LOCALE: en-GB
           BROWSER_TIMEZONE: Europe/London
         run: |
-          $engine = Join-Path $env:GITHUB_WORKSPACE "manager\\dist\\ByparrManager\\engine\\ByparrEngine\\ByparrEngine.exe"
+          $engine = Join-Path $env:GITHUB_WORKSPACE "manager\dist\ByparrManager\engine\ByparrEngine\ByparrEngine.exe"
           $stdout = Join-Path $env:RUNNER_TEMP "packaged-engine.stdout.log"
           $stderr = Join-Path $env:RUNNER_TEMP "packaged-engine.stderr.log"
           if (-not (Test-Path $engine)) { throw "Packaged engine executable was not created: $engine" }
