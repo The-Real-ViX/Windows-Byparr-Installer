@@ -1,3 +1,5 @@
+"""Cross-platform desktop entry point for Byparr Manager."""
+
 import ipaddress
 import re
 import sys
