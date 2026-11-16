@@ -3,6 +3,8 @@ import re
 import sys
 
 import httpx
+
+from secret_store import SecretStorageError, SecretStore
 from PySide6.QtCore import QSettings, Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QApplication,
@@ -93,6 +95,7 @@ class ByparrManager(QMainWindow):
         self.resize(1180, 760)
         self.setMinimumSize(980, 650)
         self.settings = QSettings("RedHeX", "ByparrManager")
+        self.secret_store = SecretStore()
         self.api_host = self.settings.value("api/host", DEFAULT_API_HOST, type=str)
         self.api_port = self.settings.value("api/port", DEFAULT_API_PORT, type=int)
         try:
@@ -457,21 +460,87 @@ class ByparrManager(QMainWindow):
         layout.setSpacing(18)
         layout.addLayout(self.page_header(
             "Connections", "Integrations",
-            "Connect the indexer applications that work with your setup."
+            "Save API keys in your computer's credential vault. Keys are never "
+            "written to the Manager settings file."
         ))
 
-        for name, description, state in [
-            ("Prowlarr", "Configure the Prowlarr address and API key.", "NOT CONFIGURED"),
-            ("Jackett", "Configure the Jackett address and API key.", "NOT CONFIGURED"),
-        ]:
-            panel, panel_layout = self.make_panel(name, description)
-            state_label = QLabel(state)
-            state_label.setObjectName("eyebrow")
-            panel_layout.addWidget(state_label)
-            layout.addWidget(panel)
+        self.add_integration_panel(
+            layout,
+            "Prowlarr",
+            "prowlarr",
+            "Configure the API key used to connect to your Prowlarr instance."
+        )
+        self.add_integration_panel(
+            layout,
+            "Jackett",
+            "jackett",
+            "Configure the API key used to connect to your Jackett instance."
+        )
 
         layout.addStretch()
         return page
+
+    def add_integration_panel(self, parent_layout, name, integration_id, description):
+        panel, panel_layout = self.make_panel(name, description)
+
+        status = QLabel()
+        status.setObjectName("muted")
+        status.setWordWrap(True)
+        try:
+            saved_secret = self.secret_store.get(integration_id)
+            status.setText(
+                "API key saved in the operating-system credential vault."
+                if saved_secret
+                else "No API key saved."
+            )
+        except SecretStorageError as error:
+            status.setText(str(error))
+        panel_layout.addWidget(status)
+
+        key_input = QLineEdit()
+        key_input.setEchoMode(QLineEdit.Password)
+        key_input.setPlaceholderText("Enter API key")
+        key_input.setClearButtonEnabled(True)
+        panel_layout.addWidget(key_input)
+
+        actions = QHBoxLayout()
+        save_button = QPushButton("Save API key securely")
+        save_button.setObjectName("primary")
+        save_button.setCursor(Qt.PointingHandCursor)
+
+        def save_secret():
+            try:
+                self.secret_store.set(integration_id, key_input.text())
+            except (SecretStorageError, ValueError) as error:
+                status.setText(str(error))
+                status.setStyleSheet("color: #e57373;")
+                return
+            key_input.clear()
+            status.setText("API key saved in the operating-system credential vault.")
+            status.setStyleSheet("color: #48c78e;")
+
+        save_button.clicked.connect(save_secret)
+        actions.addWidget(save_button)
+
+        remove_button = QPushButton("Remove saved key")
+        remove_button.setCursor(Qt.PointingHandCursor)
+
+        def remove_secret():
+            try:
+                self.secret_store.delete(integration_id)
+            except SecretStorageError as error:
+                status.setText(str(error))
+                status.setStyleSheet("color: #e57373;")
+                return
+            key_input.clear()
+            status.setText("Saved API key removed from the credential vault.")
+            status.setStyleSheet("color: #98a5b8;")
+
+        remove_button.clicked.connect(remove_secret)
+        actions.addWidget(remove_button)
+        actions.addStretch()
+        panel_layout.addLayout(actions)
+        parent_layout.addWidget(panel)
 
     def create_settings(self):
         page = QWidget()
