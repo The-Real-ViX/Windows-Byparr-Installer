@@ -1,4 +1,5 @@
 import httpx
+import pytest
 
 from main import ApiCheckWorker, api_endpoint, validate_api_settings
 
@@ -24,7 +25,7 @@ def test_api_worker_reports_unavailable_endpoint(qtbot, monkeypatch):
         raise httpx.ConnectError("connection refused")
 
     monkeypatch.setattr(httpx, "get", raise_connection_error)
-    worker = ApiCheckWorker()
+    worker = ApiCheckWorker("http://127.0.0.1:8191")
 
     with qtbot.waitSignal(worker.result, timeout=2000) as signal:
         worker.start()
@@ -41,8 +42,6 @@ def test_api_settings_accept_valid_host_and_port():
 
 
 def test_api_settings_reject_invalid_host_or_port():
-    import pytest
-
     for host, port in [
         ("", "8191"),
         ("http://localhost", "8191"),
