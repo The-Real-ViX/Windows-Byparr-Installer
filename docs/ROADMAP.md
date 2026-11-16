@@ -5,7 +5,7 @@ This roadmap describes intended work; unchecked items are not implemented yet.
 ## Phase 1 — foundation
 - [x] Create public project repository.
 - [x] Document project scope, upstream attribution and licence baseline.
-- [ ] Establish reproducible development environment.
+- [x] Establish initial pinned upstream source metadata and safe source preparation script.\n- [x] Add Windows PowerShell integrity checks and GitHub Actions workflow.\n- [ ] Establish reproducible development environment.
 - [ ] Bring upstream Byparr source into a clearly separated vendor/upstream area.
 - [ ] Record upstream commit/tag and dependency versions.
 
