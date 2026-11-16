@@ -44,9 +44,6 @@ jobs:
       - name: Apply Ruff import formatting
         run: python -m ruff check --fix .
 
-      - name: Apply Ruff import formatting
-        run: python -m ruff check --fix .
-
       - name: Run lint checks
         run: python -m ruff check .
 
@@ -105,6 +102,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
           python -m pip install pyinstaller
+
+      - name: Apply Ruff import formatting
+        run: python -m ruff check --fix .
 
       - name: Run lint checks
         run: python -m ruff check .
