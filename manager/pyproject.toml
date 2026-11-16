@@ -18,7 +18,7 @@ dev = [
 ]
 
 [tool.setuptools]
-py-modules = ["main", "secret_store"]
+py-modules = ["main", "secret_store", "engine_controller"]
 
 [tool.ruff]
 line-length = 100
