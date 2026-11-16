@@ -684,7 +684,7 @@ class ByparrManager(QMainWindow):
 
         panel, panel_layout = self.make_panel(
             "Application activity",
-            "Live service logging will be connected during the Windows service setup."
+            "Live output from the bundled Byparr engine appears here."
         )
         log_view = QTextEdit()
         self.log_view = log_view
@@ -692,7 +692,7 @@ class ByparrManager(QMainWindow):
         log_view.setPlainText(
             "Byparr Manager started.\n"
             "Interface version: 0.4\n"
-            "Waiting for service logging..."
+            "Waiting for engine activity..."
         )
         panel_layout.addWidget(log_view)
         layout.addWidget(panel)
