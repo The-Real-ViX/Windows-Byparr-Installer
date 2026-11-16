@@ -6,7 +6,29 @@ from PySide6.QtWidgets import (
     QLabel, QPushButton, QStackedWidget, QFrame, QLineEdit,
     QTextEdit, QSizePolicy, QSpacerItem
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QThread, Signal
+
+
+class ApiCheckWorker(QThread):
+    """Check the local Byparr API without blocking the desktop interface."""
+
+    result = Signal(bool, str)
+
+    def run(self):
+        try:
+            response = httpx.get(
+                "http://127.0.0.1:8191/openapi.json",
+                timeout=3.0,
+            )
+            if response.status_code == 200:
+                self.result.emit(True, "API responding")
+            else:
+                self.result.emit(
+                    False,
+                    f"Unexpected response: HTTP {response.status_code}",
+                )
+        except httpx.RequestError:
+            self.result.emit(False, "API not responding")
 
 
 class ByparrManager(QMainWindow):
@@ -312,11 +334,11 @@ class ByparrManager(QMainWindow):
         controls = QHBoxLayout()
         controls.setSpacing(10)
 
-        check_button = QPushButton("Check API connection")
-        check_button.setObjectName("primary")
-        check_button.setCursor(Qt.PointingHandCursor)
-        check_button.clicked.connect(self.check_api_connection)
-        controls.addWidget(check_button)
+        self.check_button = QPushButton("Check API connection")
+        self.check_button.setObjectName("primary")
+        self.check_button.setCursor(Qt.PointingHandCursor)
+        self.check_button.clicked.connect(self.check_api_connection)
+        controls.addWidget(self.check_button)
 
         for label in ("Start service", "Stop service", "Restart service"):
             button = QPushButton(label)
@@ -344,32 +366,24 @@ class ByparrManager(QMainWindow):
         return page
 
     def check_api_connection(self):
+        if hasattr(self, "api_worker") and self.api_worker.isRunning():
+            return
+
         self.api_status.setText("Checking connection...")
         self.status_dot.setStyleSheet("color: #e7bd70; font-size: 18px;")
-        QApplication.processEvents()
+        self.check_button.setEnabled(False)
 
-        try:
-            response = httpx.get(
-                "http://127.0.0.1:8191/openapi.json",
-                timeout=3.0,
-            )
-            if response.status_code == 200:
-                self.api_status.setText("API responding")
-                self.status_dot.setStyleSheet(
-                    "color: #48c78e; font-size: 18px;"
-                )
-            else:
-                self.api_status.setText(
-                    f"Unexpected response: HTTP {response.status_code}"
-                )
-                self.status_dot.setStyleSheet(
-                    "color: #e57373; font-size: 18px;"
-                )
-        except httpx.RequestError:
-            self.api_status.setText("API not responding")
-            self.status_dot.setStyleSheet(
-                "color: #e57373; font-size: 18px;"
-            )
+        self.api_worker = ApiCheckWorker(self)
+        self.api_worker.result.connect(self.handle_api_check_result)
+        self.api_worker.finished.connect(
+            lambda: self.check_button.setEnabled(True)
+        )
+        self.api_worker.start()
+
+    def handle_api_check_result(self, success, message):
+        self.api_status.setText(message)
+        color = "#48c78e" if success else "#e57373"
+        self.status_dot.setStyleSheet(f"color: {color}; font-size: 18px;")
 
     def create_integrations(self):
         page = QWidget()
