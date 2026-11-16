@@ -19,6 +19,16 @@ Planned capabilities:
 - A controlled upstream update workflow that checks new Byparr releases/commits, tests compatibility, and allows rollback rather than blindly replacing a working installation.
 - Clear third-party notices, source availability and licence information.
 
+## Preparing the original Byparr source
+
+The upstream revision is pinned in `UPSTREAM.lock.json`. On Windows, from the repository folder, run:
+
+```powershell
+.\scripts\Get-Upstream.ps1
+```
+
+This prepares the exact pinned source under `vendor\Byparr`. It does not install dependencies or start a service. If that folder already exists, the script stops rather than overwriting it; an explicitly requested replacement preserves the previous folder as a timestamped backup. See [the update workflow](docs/UPSTREAM_UPDATE_WORKFLOW.md).
+
 ## Project status
 
 **Early development / repository scaffold.** Features listed above are goals, not claims that an installer or Windows service is already complete. The manager interface has an early Mac preview for development, but the final target is Windows 11. The original Byparr browser engine must be tested on Windows before a Windows release can be called working.
