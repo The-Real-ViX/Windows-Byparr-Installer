@@ -4,7 +4,7 @@ import httpx
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QStackedWidget, QFrame, QLineEdit,
-    QTextEdit, QSizePolicy, QSpacerItem
+    QTextEdit
 )
 from PySide6.QtCore import Qt, QThread, Signal
 
