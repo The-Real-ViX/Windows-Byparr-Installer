@@ -1,0 +1,17 @@
+name: Project checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  powershell-integrity:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate project files and PowerShell syntax
+        shell: pwsh
+        run: ./scripts/Test-Project.ps1
