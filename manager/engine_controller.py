@@ -17,7 +17,9 @@ class EngineController(QObject):
 
     def __init__(self, parent=None, application_root: Path | None = None):
         super().__init__(parent)
-        self.application_root = Path(application_root) if application_root else self._application_root()
+        self.application_root = (
+            Path(application_root) if application_root else self._application_root()
+        )
         self.port = 8191
         self._status = "Stopped"
         self._restart_after_stop = False
