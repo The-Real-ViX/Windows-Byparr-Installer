@@ -1,7 +1,6 @@
 """Secure storage for integration credentials using native OS keyrings."""
 
 import keyring
-from keyring.errors import KeyringError
 
 SERVICE_NAME = "RedHeX.ByparrManager"
 SUPPORTED_BACKENDS = (
@@ -50,7 +49,7 @@ class SecretStore:
         self._backend()
         try:
             keyring.set_password(SERVICE_NAME, integration, secret)
-        except KeyringError as error:
+        except Exception as error:
             raise SecretStorageError(
                 "Could not save the credential to the operating-system vault."
             ) from error
