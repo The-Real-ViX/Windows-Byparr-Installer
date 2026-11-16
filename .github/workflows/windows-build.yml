@@ -1,0 +1,77 @@
+name: Windows application build
+
+on:
+  push:
+    branches:
+      - "**"
+    paths:
+      - "manager/**"
+      - ".github/workflows/windows-build.yml"
+  pull_request:
+    paths:
+      - "manager/**"
+      - ".github/workflows/windows-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-build:
+    name: Test and package Windows application
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: manager
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: manager/pyproject.toml
+
+      - name: Install application and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          python -m pip install pyinstaller
+
+      - name: Run lint checks
+        run: python -m ruff check .
+
+      - name: Run automated tests
+        run: python -m pytest
+        env:
+          QT_QPA_PLATFORM: offscreen
+
+      - name: Build Windows desktop application
+        run: >
+          python -m PyInstaller
+          --noconfirm
+          --clean
+          --windowed
+          --name ByparrManager
+          --collect-all PySide6
+          --collect-all keyring
+          --collect-all httpx
+          main.py
+
+      - name: Include project licence and notices
+        shell: pwsh
+        run: |
+          Copy-Item ..\LICENSE .\dist\ByparrManager\LICENSE.txt
+          Copy-Item ..\THIRD_PARTY_NOTICES.md .\dist\ByparrManager\THIRD_PARTY_NOTICES.md
+          Copy-Item .\README.md .\dist\ByparrManager\Manager-README.md
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ByparrManager-Windows-x64
+          path: manager/dist/ByparrManager/
+          if-no-files-found: error
+          retention-days: 14
