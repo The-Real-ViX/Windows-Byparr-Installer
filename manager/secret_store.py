@@ -39,7 +39,7 @@ class SecretStore:
         self._backend()
         try:
             return keyring.get_password(SERVICE_NAME, integration)
-        except KeyringError as error:
+        except Exception as error:
             raise SecretStorageError(
                 "Could not read the saved credential from the operating-system vault."
             ) from error
