@@ -1,12 +1,20 @@
 import sys
-import httpx
 
-from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QStackedWidget, QFrame, QLineEdit,
-    QTextEdit
-)
+import httpx
 from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtWidgets import (
+    QApplication,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QPushButton,
+    QStackedWidget,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 class ApiCheckWorker(QThread):
