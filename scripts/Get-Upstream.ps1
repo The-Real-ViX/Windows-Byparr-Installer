@@ -27,7 +27,9 @@ if (Test-Path $Target) {
     if (-not $Force) {
         throw "The upstream folder already exists at '$Target'. Nothing was changed. Use -Force only after backing up/removing that folder."
     }
-    Remove-Item -LiteralPath $Target -Recurse -Force
+    $Backup = "$Target.backup-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+    Move-Item -LiteralPath $Target -Destination $Backup
+    Write-Host "Existing upstream folder preserved at: $Backup"
 }
 
 New-Item -ItemType Directory -Path $VendorRoot -Force | Out-Null
