@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from engine_controller import EngineController
 from secret_store import SecretStorageError, SecretStore
 
 
@@ -98,6 +99,9 @@ class ByparrManager(QMainWindow):
         self.setMinimumSize(980, 650)
         self.settings = QSettings("RedHeX", "ByparrManager")
         self.secret_store = SecretStore()
+        self.engine_controller = EngineController(self)
+        self.engine_controller.status_changed.connect(self.handle_engine_status)
+        self.engine_controller.log_message.connect(self.append_log)
         self.api_host = self.settings.value("api/host", DEFAULT_API_HOST, type=str)
         self.api_port = self.settings.value("api/port", DEFAULT_API_PORT, type=int)
         try:
@@ -368,7 +372,7 @@ class ByparrManager(QMainWindow):
         metrics = QHBoxLayout()
         metrics.setSpacing(14)
         metrics.addWidget(self.make_metric(
-            "Engine", "Not connected", "Service controls are coming next"
+            "Engine", "Stopped", "Bundled Windows engine"
         ))
         metrics.addWidget(self.make_metric(
             "API port", "8191", "Default local API endpoint"
@@ -380,7 +384,7 @@ class ByparrManager(QMainWindow):
 
         panel, panel_layout = self.make_panel(
             "Service connection",
-            "Check whether the Byparr API is responding on this computer."
+            "Start and manage the bundled Byparr engine on this computer."
         )
 
         status_row = QHBoxLayout()
@@ -410,13 +414,21 @@ class ByparrManager(QMainWindow):
         self.check_button.clicked.connect(self.check_api_connection)
         controls.addWidget(self.check_button)
 
-        for label in ("Start service", "Stop service", "Restart service"):
-            button = QPushButton(label)
-            button.setEnabled(False)
-            button.setToolTip(
-                "Windows service controls have not been implemented yet."
-            )
-            controls.addWidget(button)
+        self.start_button = QPushButton("Start engine")
+        self.start_button.setObjectName("primary")
+        self.start_button.setCursor(Qt.PointingHandCursor)
+        self.start_button.clicked.connect(self.start_engine)
+        controls.addWidget(self.start_button)
+
+        self.stop_button = QPushButton("Stop engine")
+        self.stop_button.setEnabled(False)
+        self.stop_button.clicked.connect(self.stop_engine)
+        controls.addWidget(self.stop_button)
+
+        self.restart_button = QPushButton("Restart engine")
+        self.restart_button.setEnabled(False)
+        self.restart_button.clicked.connect(self.restart_engine)
+        controls.addWidget(self.restart_button)
 
         controls.addStretch()
         panel_layout.addLayout(controls)
@@ -424,16 +436,54 @@ class ByparrManager(QMainWindow):
 
         info_panel, info_layout = self.make_panel(
             "Welcome to Byparr Manager",
-            "The management interface is running. The next development stage "
-            "will connect the official Byparr engine and add Windows service "
-            "installation, startup and control features."
+            "The Manager controls the bundled Byparr engine. Start it above, "
+            "then use the API check to confirm that its local endpoint responds."
         )
-        info_label = QLabel("Your existing API connection check is available above.")
+        info_label = QLabel("The engine runs locally and does not depend on Brave or Chrome.")
         info_label.setObjectName("muted")
         info_layout.addWidget(info_label)
         layout.addWidget(info_panel)
         layout.addStretch()
         return page
+
+    def start_engine(self):
+        self.engine_controller.port = self.api_port
+        self.engine_controller.start()
+
+    def stop_engine(self):
+        self.engine_controller.stop()
+
+    def restart_engine(self):
+        self.engine_controller.port = self.api_port
+        self.engine_controller.restart()
+
+    def handle_engine_status(self, status):
+        self.api_status.setText(status)
+        colors = {
+            "Running": "#48c78e",
+            "Stopped": "#98a5b8",
+            "Starting": "#e7bd70",
+            "Stopping": "#e7bd70",
+            "Restarting": "#e7bd70",
+            "Engine files missing": "#e57373",
+            "Failed to start": "#e57373",
+        }
+        self.status_dot.setStyleSheet(
+            f"color: {colors.get(status, '#e7bd70')}; font-size: 18px;"
+        )
+        self.start_button.setEnabled(status in {
+            "Stopped", "Engine files missing", "Failed to start"
+        })
+        self.stop_button.setEnabled(status in {"Starting", "Running", "Restarting"})
+        self.restart_button.setEnabled(status in {"Starting", "Running"})
+
+    def append_log(self, message):
+        if hasattr(self, "log_view"):
+            self.log_view.append(message)
+
+    def closeEvent(self, event):
+        self.engine_controller.shutdown()
+        super().closeEvent(event)
 
     def check_api_connection(self):
         if hasattr(self, "api_worker") and self.api_worker.isRunning():
@@ -605,6 +655,7 @@ class ByparrManager(QMainWindow):
 
         self.api_host = host
         self.api_port = port
+        self.engine_controller.port = port
         self.settings.setValue("api/host", host)
         self.settings.setValue("api/port", port)
         self.settings.sync()
@@ -636,6 +687,7 @@ class ByparrManager(QMainWindow):
             "Live service logging will be connected during the Windows service setup."
         )
         log_view = QTextEdit()
+        self.log_view = log_view
         log_view.setReadOnly(True)
         log_view.setPlainText(
             "Byparr Manager started.\n"
