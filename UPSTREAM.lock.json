@@ -1,0 +1,9 @@
+{
+  "project": "Byparr",
+  "repository": "https://github.com/ThePhaseless/Byparr",
+  "commit": "c81385f59ec978ef81909a273e514ca6d9ace2a9",
+  "commit_url": "https://github.com/ThePhaseless/Byparr/commit/c81385f59ec978ef81909a273e514ca6d9ace2a9",
+  "checked_at": "2026-11-16",
+  "license": "GPL-3.0",
+  "note": "Pinned upstream source revision. Review and test updates before changing this pin."
+}
