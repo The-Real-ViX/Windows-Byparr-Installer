@@ -28,8 +28,8 @@ $ParseErrors = $null
     [ref]$ParseErrors
 ) | Out-Null
 
-if ($Errors.Count -gt 0) {
-    $Errors | ForEach-Object { Write-Error $_.Message }
+if ($ParseErrors.Count -gt 0) {
+    $ParseErrors | ForEach-Object { Write-Error $_.Message }
     throw "PowerShell syntax validation failed."
 }
 
