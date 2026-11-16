@@ -3,8 +3,6 @@ import re
 import sys
 
 import httpx
-
-from secret_store import SecretStorageError, SecretStore
 from PySide6.QtCore import QSettings, Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QApplication,
@@ -19,6 +17,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from secret_store import SecretStorageError, SecretStore
 
 
 DEFAULT_API_HOST = "127.0.0.1"
