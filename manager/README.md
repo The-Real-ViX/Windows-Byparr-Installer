@@ -8,7 +8,7 @@ This is the recovered v0.4 interface preview. It provides a Dashboard, Integrati
 
 The manager interface is being developed on macOS. The intended production target is Windows 11. The Byparr engine, Windows service lifecycle, installer, and Prowlarr/Jackett integration workflows are **not yet implemented** by this interface. The dashboard's disabled service buttons are deliberate placeholders.
 
-The API check targets the saved host and port (default `http://127.0.0.1:8191/openapi.json`). Settings are stored locally using Qt's platform settings store and validated before saving. The check only reports whether the OpenAPI endpoint responds; it does not prove browser challenge solving works.
+The API check targets the saved host and port (default `http://127.0.0.1:8191/openapi.json`). Settings are stored locally using Qt's platform settings store and validated before saving. Prowlarr and Jackett API keys are stored separately in the operating-system credential vault via Python Keyring; the Manager does not write those keys to its settings file. Only native macOS Keychain, Windows Credential Manager, Secret Service, and KWallet backends are accepted. If a supported vault is unavailable, saving fails rather than falling back to plaintext. The check only reports whether the OpenAPI endpoint responds; it does not prove browser challenge solving works.
 
 ## Requirements
 
@@ -49,8 +49,7 @@ uv run python -m compileall -q .
 ## Planned next steps
 
 1. Separate UI pages and shared widgets into maintainable modules.
-2. Add secure storage for integration API keys, using the operating system credential store.
-3. Add structured application logging and diagnostics without recording secrets.
-4. Implement a Windows runtime supervisor and service lifecycle behind a platform-specific boundary.
-5. Add Prowlarr and Jackett configuration and connection tests.
-6. Package and test the application on Windows 11.
+2. Add structured application logging and diagnostics without recording secrets.
+3. Implement a Windows runtime supervisor and service lifecycle behind a platform-specific boundary.
+4. Add Prowlarr and Jackett server addresses and connection tests.
+5. Package and test the application on Windows 11.
