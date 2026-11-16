@@ -391,9 +391,11 @@ class ByparrManager(QMainWindow):
         status_row.addStretch()
         panel_layout.addLayout(status_row)
 
-        endpoint = QLabel(f"LOCAL API     {api_endpoint(self.api_host, self.api_port)}")
-        endpoint.setObjectName("muted")
-        panel_layout.addWidget(endpoint)
+        self.endpoint_label = QLabel(
+            f"LOCAL API     {api_endpoint(self.api_host, self.api_port)}"
+        )
+        self.endpoint_label.setObjectName("muted")
+        panel_layout.addWidget(self.endpoint_label)
 
         controls = QHBoxLayout()
         controls.setSpacing(10)
@@ -536,6 +538,9 @@ class ByparrManager(QMainWindow):
         self.settings.setValue("api/host", host)
         self.settings.setValue("api/port", port)
         self.settings.sync()
+        self.endpoint_label.setText(
+            f"LOCAL API     {api_endpoint(self.api_host, self.api_port)}"
+        )
         self.settings_status.setText(
             "Settings saved. The next API check will use this address."
         )
