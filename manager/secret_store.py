@@ -1,6 +1,7 @@
 """Secure storage for integration credentials using native OS keyrings."""
 
 import keyring
+from keyring.errors import PasswordDeleteError
 
 SERVICE_NAME = "RedHeX.ByparrManager"
 SUPPORTED_BACKENDS = (
@@ -58,7 +59,7 @@ class SecretStore:
         self._backend()
         try:
             keyring.delete_password(SERVICE_NAME, integration)
-        except keyring.errors.PasswordDeleteError:
+        except PasswordDeleteError:
             return
         except KeyringError as error:
             raise SecretStorageError(
