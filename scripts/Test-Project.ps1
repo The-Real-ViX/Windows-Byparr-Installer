@@ -21,11 +21,11 @@ if ($Lock.license -ne "GPL-3.0") {
 }
 
 $Tokens = $null
-$Errors = $null
+$ParseErrors = $null
 [System.Management.Automation.Language.Parser]::ParseFile(
     $FetchScript,
     [ref]$Tokens,
-    [ref]$Errors
+    [ref]$ParseErrors
 ) | Out-Null
 
 if ($Errors.Count -gt 0) {
