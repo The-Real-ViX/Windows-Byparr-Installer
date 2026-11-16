@@ -5,6 +5,14 @@ Maintained by **RedHeX** · Project credits: **RedHeX & The TinMan**
 
 > This is an independent community project. It is not affiliated with, endorsed by, or an official release of the original Byparr project or its author.
 
+## Why this project exists
+
+This project is being developed primarily for **my own personal use**. I am making the work public because others may find it useful too.
+
+Anyone is welcome to use it, study it, adapt it, improve it, or share their own versions, subject to the applicable licences and the rights of the original authors. You do not need to ask me for special permission to make use of this repository where the licence already allows it. Please keep required copyright notices, attribution and licence information intact.
+
+This is a personal community project, not a commercial product or an official Byparr release. I make no promise of support, maintenance or suitability for any particular purpose, but constructive feedback and contributions are welcome.
+
 ## What this project aims to provide
 
 A beginner-friendly Windows 11 installation and control centre for the original [Byparr](https://github.com/ThePhaseless/Byparr) engine, with the engine kept as a separately identifiable upstream component.
