@@ -1,3 +1,5 @@
+import ipaddress
+import re
 import sys
 
 import httpx
@@ -11,10 +13,51 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QPushButton,
     QStackedWidget,
+    QSettings,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
+
+
+DEFAULT_API_HOST = "127.0.0.1"
+DEFAULT_API_PORT = 8191
+
+
+def validate_api_settings(host, port):
+    """Validate a host name/IP address and a TCP port without accepting a URL."""
+    host = host.strip()
+    if not host or any(char in host for char in "/\\?#@") or any(
+        char.isspace() for char in host
+    ):
+        raise ValueError("Enter a host name or IP address only, without http:// or a path.")
+
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        if len(host) > 253 or not re.fullmatch(
+            r"[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?", host
+        ):
+            raise ValueError("Enter a valid host name or IP address.")
+        if any(not label or len(label) > 63 for label in host.split(".")):
+            raise ValueError("Enter a valid host name or IP address.")
+
+    try:
+        port_number = int(port)
+    except (TypeError, ValueError) as error:
+        raise ValueError("Port must be a number between 1 and 65535.") from error
+    if not 1 <= port_number <= 65535:
+        raise ValueError("Port must be between 1 and 65535.")
+
+    return host, port_number
+
+
+def api_endpoint(host, port):
+    """Build an HTTP endpoint, including brackets around IPv6 literals."""
+    host, port = validate_api_settings(host, port)
+    if ":" in host:
+        host = f"[{host}]"
+    return f"http://{host}:{port}"
 
 
 class ApiCheckWorker(QThread):
@@ -22,10 +65,14 @@ class ApiCheckWorker(QThread):
 
     result = Signal(bool, str)
 
+    def __init__(self, url, parent=None):
+        super().__init__(parent)
+        self.url = url
+
     def run(self):
         try:
             response = httpx.get(
-                "http://127.0.0.1:8191/openapi.json",
+                f"{self.url}/openapi.json",
                 timeout=3.0,
             )
             if response.status_code == 200:
@@ -46,6 +93,15 @@ class ByparrManager(QMainWindow):
         self.setWindowTitle("Byparr Manager")
         self.resize(1180, 760)
         self.setMinimumSize(980, 650)
+        self.settings = QSettings("RedHeX", "ByparrManager")
+        self.api_host = self.settings.value("api/host", DEFAULT_API_HOST, type=str)
+        self.api_port = self.settings.value("api/port", DEFAULT_API_PORT, type=int)
+        try:
+            self.api_host, self.api_port = validate_api_settings(
+                self.api_host, self.api_port
+            )
+        except ValueError:
+            self.api_host, self.api_port = DEFAULT_API_HOST, DEFAULT_API_PORT
 
         self.setStyleSheet("""
             QMainWindow, QWidget {
@@ -335,7 +391,7 @@ class ByparrManager(QMainWindow):
         status_row.addStretch()
         panel_layout.addLayout(status_row)
 
-        endpoint = QLabel("LOCAL API     http://127.0.0.1:8191")
+        endpoint = QLabel(f"LOCAL API     {api_endpoint(self.api_host, self.api_port)}")
         endpoint.setObjectName("muted")
         panel_layout.addWidget(endpoint)
 
@@ -381,7 +437,7 @@ class ByparrManager(QMainWindow):
         self.status_dot.setStyleSheet("color: #e7bd70; font-size: 18px;")
         self.check_button.setEnabled(False)
 
-        self.api_worker = ApiCheckWorker(self)
+        self.api_worker = ApiCheckWorker(api_endpoint(self.api_host, self.api_port), self)
         self.api_worker.result.connect(self.handle_api_check_result)
         self.api_worker.finished.connect(
             lambda: self.check_button.setEnabled(True)
@@ -423,28 +479,72 @@ class ByparrManager(QMainWindow):
         layout.setSpacing(18)
         layout.addLayout(self.page_header(
             "Configuration", "Settings",
-            "Review the current local API connection details."
+            "Configure the local Byparr API connection. Settings are saved on this computer."
         ))
 
         panel, panel_layout = self.make_panel(
             "API configuration",
-            "These are the current default connection details. Editing and saving "
-            "settings will be added in a later stage."
+            "The default is localhost on port 8191. Keep the API bound to your own "
+            "computer unless you have deliberately configured a trusted network."
         )
 
-        panel_layout.addWidget(QLabel("API address"))
-        address = QLineEdit("127.0.0.1")
-        address.setReadOnly(True)
-        panel_layout.addWidget(address)
+        panel_layout.addWidget(QLabel("API host or IP address"))
+        self.api_host_input = QLineEdit(self.api_host)
+        self.api_host_input.setPlaceholderText("127.0.0.1")
+        panel_layout.addWidget(self.api_host_input)
 
         panel_layout.addWidget(QLabel("API port"))
-        port = QLineEdit("8191")
-        port.setReadOnly(True)
-        panel_layout.addWidget(port)
+        self.api_port_input = QLineEdit(str(self.api_port))
+        self.api_port_input.setPlaceholderText("8191")
+        panel_layout.addWidget(self.api_port_input)
+
+        actions = QHBoxLayout()
+        save_button = QPushButton("Save settings")
+        save_button.setObjectName("primary")
+        save_button.setCursor(Qt.PointingHandCursor)
+        save_button.clicked.connect(self.save_api_settings)
+        actions.addWidget(save_button)
+
+        reset_button = QPushButton("Restore defaults")
+        reset_button.setCursor(Qt.PointingHandCursor)
+        reset_button.clicked.connect(self.reset_api_settings)
+        actions.addWidget(reset_button)
+        actions.addStretch()
+        panel_layout.addLayout(actions)
+
+        self.settings_status = QLabel("Settings are stored locally on this computer.")
+        self.settings_status.setObjectName("muted")
+        self.settings_status.setWordWrap(True)
+        panel_layout.addWidget(self.settings_status)
 
         layout.addWidget(panel)
         layout.addStretch()
         return page
+
+    def save_api_settings(self):
+        try:
+            host, port = validate_api_settings(
+                self.api_host_input.text(), self.api_port_input.text()
+            )
+        except ValueError as error:
+            self.settings_status.setText(str(error))
+            self.settings_status.setStyleSheet("color: #e57373;")
+            return
+
+        self.api_host = host
+        self.api_port = port
+        self.settings.setValue("api/host", host)
+        self.settings.setValue("api/port", port)
+        self.settings.sync()
+        self.settings_status.setText(
+            "Settings saved. The next API check will use this address."
+        )
+        self.settings_status.setStyleSheet("color: #48c78e;")
+
+    def reset_api_settings(self):
+        self.api_host_input.setText(DEFAULT_API_HOST)
+        self.api_port_input.setText(str(DEFAULT_API_PORT))
+        self.save_api_settings()
 
     def create_logs(self):
         page = QWidget()
