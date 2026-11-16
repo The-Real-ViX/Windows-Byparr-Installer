@@ -15,6 +15,7 @@ def test_api_worker_reports_healthy_endpoint(qtbot, monkeypatch):
     with qtbot.waitSignal(worker.result, timeout=2000) as signal:
         worker.start()
 
+    assert worker.wait(2000)
     assert signal.args == [True, "API responding"]
 
 
@@ -28,4 +29,5 @@ def test_api_worker_reports_unavailable_endpoint(qtbot, monkeypatch):
     with qtbot.waitSignal(worker.result, timeout=2000) as signal:
         worker.start()
 
+    assert worker.wait(2000)
     assert signal.args == [False, "API not responding"]
