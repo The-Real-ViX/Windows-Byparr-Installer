@@ -1058,7 +1058,7 @@ def run_full_uninstall_cleanup():
 
         print("Full uninstall cleanup completed.")
         return 0
-    except Exception:
+    except (SecretStorageError, OSError, RuntimeError):
         # Never print credential values or backend exception details.
         print(
             "Full uninstall cleanup could not remove all user data. "
