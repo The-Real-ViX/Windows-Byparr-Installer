@@ -1,7 +1,7 @@
 """Secure storage for integration credentials using native OS keyrings."""
 
 import keyring
-from keyring.errors import PasswordDeleteError
+from keyring.errors import KeyringError, PasswordDeleteError
 
 SERVICE_NAME = "RedHeX.ByparrManager"
 SUPPORTED_BACKENDS = (
