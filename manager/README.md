@@ -16,7 +16,8 @@ The packaged Windows application is intended to contain:
 
 - `ByparrManager.exe`: the desktop management interface.
 - `engine/ByparrEngine/`: the separately packaged Byparr API engine.
-- `engine/browser-cache/`: the verified patched browser runtime used by Byparr.
+- `engine/browser-engine/`: the verified, read-only patched browser runtime bundled with the application.
+- Per-user `browser-cache/`: writable browser state kept in the user's local application data folder.
 
 The Manager launches the engine locally on `127.0.0.1` and the configured API port (default `8191`). It monitors `/openapi.json` for readiness and captures engine output in its Logs page. It attempts a graceful stop and uses a forced stop only as a fallback.
 
