@@ -126,9 +126,10 @@ jobs:
         working-directory: vendor/Byparr
         shell: pwsh
         env:
+          INVISIBLE_PLAYWRIGHT_ENGINE_DIR: ${{ github.workspace }}\manager\dist\ByparrManager\engine\browser-engine
           INVISIBLE_PLAYWRIGHT_CACHE_DIR: ${{ runner.temp }}\ByparrManager-CI\browser-cache
         run: |
-          New-Item -ItemType Directory -Force -Path $env:INVISIBLE_PLAYWRIGHT_CACHE_DIR | Out-Null
+          New-Item -ItemType Directory -Force -Path $env:INVISIBLE_PLAYWRIGHT_ENGINE_DIR, $env:INVISIBLE_PLAYWRIGHT_CACHE_DIR | Out-Null
           uv run python -m invisible_playwright fetch
 
       - name: Install engine packager
@@ -147,6 +148,7 @@ jobs:
       - name: Smoke test the packaged engine and bundled browser
         shell: pwsh
         env:
+          INVISIBLE_PLAYWRIGHT_ENGINE_DIR: ${{ github.workspace }}\manager\dist\ByparrManager\engine\browser-engine
           INVISIBLE_PLAYWRIGHT_CACHE_DIR: ${{ runner.temp }}\ByparrManager-CI\browser-cache
           HOST: 127.0.0.1
           PORT: "8191"
