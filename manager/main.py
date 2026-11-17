@@ -3,11 +3,13 @@
 import ipaddress
 import re
 import secrets
+import shutil
 import sys
+from pathlib import Path
 from datetime import datetime
 
 import httpx
-from PySide6.QtCore import QSettings, Qt, QThread, Signal
+from PySide6.QtCore import QSettings, QStandardPaths, Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -1029,9 +1031,48 @@ def run_credential_smoke_test():
         return 1
 
 
+def run_full_uninstall_cleanup():
+    """Remove Byparr Manager user data and integration credentials on request."""
+    try:
+        store = SecretStore()
+        for integration in ("prowlarr", "jackett"):
+            store.delete(integration)
+
+        settings = QSettings("RedHeX", "ByparrManager")
+        settings.clear()
+        settings.sync()
+        if settings.status() != QSettings.NoError:
+            raise RuntimeError("Could not clear application settings.")
+
+        # Match EngineController.browser_cache_path and avoid other RedHeX data.
+        app_data = QStandardPaths.writableLocation(
+            QStandardPaths.AppLocalDataLocation
+        )
+        if not app_data:
+            app_data = str(
+                Path.home() / "AppData" / "Local" / "RedHeX" / "ByparrManager"
+            )
+        data_directory = Path(app_data)
+        if data_directory.exists():
+            shutil.rmtree(data_directory)
+
+        print("Full uninstall cleanup completed.")
+        return 0
+    except Exception:
+        # Never print credential values or backend exception details.
+        print(
+            "Full uninstall cleanup could not remove all user data. "
+            "Some settings, cache, or saved credentials may remain.",
+            file=sys.stderr,
+        )
+        return 1
+
+
 if __name__ == "__main__":
     if "--credential-smoke-test" in sys.argv:
         sys.exit(run_credential_smoke_test())
+    if "--full-uninstall-cleanup" in sys.argv:
+        sys.exit(run_full_uninstall_cleanup())
     app = QApplication(sys.argv)
     window = ByparrManager()
     window.show()
