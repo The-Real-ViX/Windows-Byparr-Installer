@@ -3,7 +3,6 @@ import re
 import sys
 
 import httpx
-
 from PySide6.QtCore import QSettings, Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QApplication,
