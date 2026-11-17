@@ -1,38 +1,43 @@
-# Byparr Manager
+# Byparr Manager — Windows
 
-A Windows-first desktop manager for the pinned upstream Byparr engine.
+Byparr Manager is an independent community-built Windows desktop control centre for the upstream [Byparr](https://github.com/ThePhaseless/Byparr) engine.
 
-## Current development status
+**Version:** 0.4.0 Beta  
+**Platform:** Windows 11 x64
 
-The Manager provides a Dashboard, Integrations, Settings, and Logs pages. The Dashboard now has a Windows engine process controller with Start, Stop, and Restart actions, process output logging, and API readiness monitoring.
+## Main features
 
-The Windows CI build is being extended to package the pinned Byparr source as a standalone engine executable and include its verified Invisible Playwright browser runtime. The intention is that the final Windows installation will not require a separately installed Python, Docker, Brave, or Chrome.
+- Start, stop and restart the local Byparr engine.
+- Check API connectivity and Browser Health.
+- View and export timestamped application and engine logs.
+- Check Prowlarr and qBittorrent connectivity.
+- Run Prowlarr integration diagnostics.
+- Store integration credentials using Windows Credential Manager.
 
-**This is still a development build, not yet a finished installer.** The bundled engine and browser must pass the packaged Windows smoke test before a test build is offered for installation on the target laptop. The final installer and update/uninstall workflow are still to come.
+## First run
 
-## Runtime layout
+1. Launch Byparr Manager.
+2. On the Dashboard, check the API and Browser Health indicators.
+3. Open Integrations and test Prowlarr and qBittorrent if configured.
+4. In Prowlarr, test an indexer configured to use Byparr, then try a search.
+5. If something fails, open Logs and export the relevant diagnostic output.
 
-The packaged Windows application is intended to contain:
+The Manager launches the engine locally by default. Keep the API bound to localhost unless you intentionally need trusted network access and understand the exposure.
 
-- `ByparrManager.exe`: the desktop management interface.
-- `engine/ByparrEngine/`: the separately packaged Byparr API engine.
-- `engine/browser-engine/`: the verified, read-only patched browser runtime bundled with the application.
-- Per-user `browser-cache/`: writable browser state kept in the user's local application data folder.
+## Reporting problems
 
-The Manager launches the engine locally on `127.0.0.1` and the configured API port (default `8191`). It monitors `/openapi.json` for readiness and captures engine output in its Logs page. It attempts a graceful stop and uses a forced stop only as a fallback.
+This is beta software maintained by one person in spare time. Reports and testing feedback are welcome, but response times are not guaranteed.
 
-## Integrations and settings
+- Bug reports: https://github.com/The-Real-ViX/Windows-Byparr-Installer/issues/new?template=bug_report.yml
+- Feature requests: https://github.com/The-Real-ViX/Windows-Byparr-Installer/issues/new?template=feature_request.yml
+- Testing guide: https://github.com/The-Real-ViX/Windows-Byparr-Installer/blob/main/docs/BETA_TESTING.md
 
-Prowlarr and Jackett API keys are stored through the operating-system credential vault using Python Keyring. The Manager does not write those keys to its settings file or fall back to plaintext if a supported vault is unavailable.
+Include the Manager version/build, Windows version, steps to reproduce, and expected versus actual behaviour.
 
-The API host and port are stored locally using Qt settings. Keep the API bound to localhost unless you have deliberately configured a trusted network.
+**Before sharing logs or screenshots, remove API keys, passwords, cookies, tokens, private tracker URLs, usernames, local paths, IP addresses and other personal information. Never post secrets or suspected security vulnerabilities in a public issue.** See the repository's SECURITY.md.
 
-## Development
+## Project status and attribution
 
-The desktop Manager is built with PySide6. The engine is pinned in the repository's `UPSTREAM.lock.json` and uses the upstream project's locked Python 3.14 dependencies.
+This is a community beta, not a finished or officially supported Byparr release. The upstream Byparr engine is authored by ThePhaseless. This Manager is an independent project and is not affiliated with or endorsed by the upstream author.
 
-The Windows GitHub Actions workflow builds and tests the Windows application. The Mac can be used as an optional development workstation, but it is not a release target for the current project phase.
-
-## Licensing
-
-Byparr is distributed under GPL-3.0. See the repository's `LICENSE` and `THIRD_PARTY_NOTICES.md` for licensing and attribution details.
+See the repository's LICENSE and THIRD_PARTY_NOTICES.md for licence and attribution information. Binary distribution is subject to completion of the release dependency and licence inventory.
