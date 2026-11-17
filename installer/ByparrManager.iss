@@ -31,6 +31,13 @@ WizardStyle=modern
 CloseApplications=yes
 RestartApplications=no
 Uninstallable=yes
+SetupLogging=yes
+
+[Messages]
+StatusCreateDirs=Preparing installation folders...
+StatusExtractFiles=Installing Byparr Manager and its bundled Byparr engine... This may take several minutes.
+StatusCreateIcons=Creating Start Menu and desktop shortcuts...
+StatusRunProgram=Finishing installation...
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"
