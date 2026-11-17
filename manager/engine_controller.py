@@ -6,7 +6,14 @@ import sys
 from pathlib import Path
 
 import httpx
-from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, Signal
+from PySide6.QtCore import (
+    QObject,
+    QProcess,
+    QProcessEnvironment,
+    QStandardPaths,
+    QTimer,
+    Signal,
+)
 
 
 class EngineController(QObject):
@@ -47,7 +54,13 @@ class EngineController(QObject):
 
     @property
     def browser_cache_path(self) -> Path:
-        return self.application_root / "engine" / "browser-cache"
+        """Return a per-user cache directory that is writable after installation."""
+        app_data = QStandardPaths.writableLocation(
+            QStandardPaths.AppLocalDataLocation
+        )
+        if not app_data:
+            app_data = str(Path.home() / "AppData" / "Local" / "RedHeX" / "ByparrManager")
+        return Path(app_data) / "browser-cache"
 
     @property
     def is_running(self) -> bool:
