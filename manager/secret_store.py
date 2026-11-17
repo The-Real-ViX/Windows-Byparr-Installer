@@ -1,7 +1,17 @@
 """Secure storage for integration credentials using native OS keyrings."""
 
+import sys
+
 import keyring
 from keyring.errors import KeyringError, PasswordDeleteError
+
+if sys.platform == "win32":
+    # Pin the Windows Credential Manager backend explicitly. This avoids
+    # plugin-discovery differences in frozen PyInstaller applications.
+    from keyring.backends.Windows import WinVaultKeyring
+
+    keyring.set_keyring(WinVaultKeyring())
+
 
 SERVICE_NAME = "RedHeX.ByparrManager"
 SUPPORTED_BACKENDS = (
