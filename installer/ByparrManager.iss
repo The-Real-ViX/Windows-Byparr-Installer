@@ -61,10 +61,10 @@ begin
       mbConfirmation, MB_YESNO
     ) = IDYES then
     begin
-      if FileExists(ExpandConstant('{app}\\ByparrManager.exe')) then
+      if FileExists(ExpandConstant('{app}\ByparrManager.exe')) then
       begin
         if (not Exec(
-          ExpandConstant('{app}\\ByparrManager.exe'),
+          ExpandConstant('{app}\ByparrManager.exe'),
           '--full-uninstall-cleanup',
           ExpandConstant('{app}'),
           SW_HIDE,
