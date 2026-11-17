@@ -474,6 +474,7 @@ class ByparrManager(QMainWindow):
         controls.addWidget(self.check_button)
 
         self.browser_health_button = QPushButton("Run browser health check")
+        self.browser_health_button.setEnabled(False)
         self.browser_health_button.setCursor(Qt.PointingHandCursor)
         self.browser_health_button.clicked.connect(self.check_browser_health)
         controls.addWidget(self.browser_health_button)
