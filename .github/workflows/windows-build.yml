@@ -65,8 +65,21 @@ jobs:
           --name ByparrManager
           --collect-all PySide6
           --collect-all keyring
+          --collect-all win32ctypes
+          --hidden-import win32timezone
+          --hidden-import win32ctypes.pywin32.win32cred
+          --hidden-import win32ctypes.pywin32.pywintypes
           --collect-all httpx
           main.py
+
+      - name: Verify packaged Windows Credential Manager integration
+        shell: pwsh
+        run: |
+          $manager = Join-Path $env:GITHUB_WORKSPACE "manager\dist\ByparrManager\ByparrManager.exe"
+          if (-not (Test-Path $manager)) { throw "Packaged Manager executable not found: $manager" }
+          $process = Start-Process -FilePath $manager -ArgumentList "--credential-smoke-test" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Packaged credential-vault test failed with exit code $($process.ExitCode)." }
+          Write-Host "SUCCESS: packaged Manager saved, read, and deleted a Windows Credential Manager test entry."
 
       - name: Include project licence and notices
         shell: pwsh
