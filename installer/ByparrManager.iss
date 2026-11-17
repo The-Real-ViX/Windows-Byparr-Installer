@@ -1,5 +1,10 @@
 #define AppName "Byparr Manager"
-#define AppVersion "0.4.0"
+#ifndef AppVersion
+  #define AppVersion "0.4.0"
+#endif
+#ifndef BuildNumber
+  #define BuildNumber "DEV"
+#endif
 #define AppPublisher "The-Real-ViX"
 #define AppExeName "ByparrManager.exe"
 #define BuildDir "..\manager\dist\ByparrManager"
@@ -17,7 +22,7 @@ ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64
 PrivilegesRequired=admin
 OutputDir=..\manager\installer-output
-OutputBaseFilename=ByparrManager-Setup-x64
+OutputBaseFilename=ByparrManager-Setup-v{#AppVersion}-build-{#BuildNumber}-x64
 SetupIconFile={#IconFile}
 UninstallDisplayIcon={app}\{#AppExeName}
 Compression=lzma2
