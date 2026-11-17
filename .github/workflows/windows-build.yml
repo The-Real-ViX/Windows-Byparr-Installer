@@ -6,10 +6,12 @@ on:
       - "**"
     paths:
       - "manager/**"
+      - "installer/**"
       - ".github/workflows/windows-build.yml"
   pull_request:
     paths:
       - "manager/**"
+      - "installer/**"
       - ".github/workflows/windows-build.yml"
   workflow_dispatch:
 
@@ -43,7 +45,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
-          python -m pip install pyinstaller
+          python -m pip install pyinstaller pillow
 
       - name: Apply Ruff import formatting
         run: python -m ruff check --fix .
@@ -56,6 +58,9 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
 
+      - name: Generate the branded Windows icon
+        run: python create_icon.py
+
       - name: Build Windows desktop application
         run: >
           python -m PyInstaller
@@ -63,6 +68,7 @@ jobs:
           --clean
           --windowed
           --name ByparrManager
+          --icon assets/byparr-manager.ico
           --collect-all PySide6
           --collect-all keyring
           --collect-all win32ctypes
@@ -165,10 +171,30 @@ jobs:
               if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
           }
 
-      - name: Upload Windows build
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $compiler)) { throw "Inno Setup compiler not found: $compiler" }
+          & $compiler "..\installer\ByparrManager.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
+
+      - name: Upload Windows portable build
         uses: actions/upload-artifact@v4
         with:
-          name: ByparrManager-Windows-x64
+          name: ByparrManager-Windows-x64-Portable
           path: manager/dist/ByparrManager/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ByparrManager-Windows-x64-Installer
+          path: manager/installer-output/ByparrManager-Setup-x64.exe
           if-no-files-found: error
           retention-days: 14
