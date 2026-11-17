@@ -2,6 +2,7 @@
 
 import ipaddress
 import re
+import secrets
 import sys
 
 import httpx
@@ -700,7 +701,33 @@ class ByparrManager(QMainWindow):
         return page
 
 
+def run_credential_smoke_test():
+    """Exercise the packaged OS credential vault without exposing the test secret."""
+    store = SecretStore()
+    integration = f"ci-smoke-{secrets.token_hex(8)}"
+    expected = secrets.token_urlsafe(32)
+    try:
+        store.set(integration, expected)
+        actual = store.get(integration)
+        if actual != expected:
+            raise RuntimeError("Credential vault read-back did not match the saved value.")
+        store.delete(integration)
+        if store.get(integration) is not None:
+            raise RuntimeError("Credential vault entry still exists after deletion.")
+        print("Credential vault round-trip passed.")
+        return 0
+    except Exception as error:
+        try:
+            store.delete(integration)
+        except Exception:
+            pass
+        print(f"Credential vault smoke test failed: {error}", file=sys.stderr)
+        return 1
+
+
 if __name__ == "__main__":
+    if "--credential-smoke-test" in sys.argv:
+        sys.exit(run_credential_smoke_test())
     app = QApplication(sys.argv)
     window = ByparrManager()
     window.show()
