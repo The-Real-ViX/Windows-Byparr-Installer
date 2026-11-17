@@ -113,5 +113,5 @@ class ProwlarrIntegrationCheckWorker(QThread):
                     f"Client test returned HTTP {response.status_code}",
                 )
 
-        except (httpx.RequestError, ValueError):
+        except (httpx.RequestError, httpx.InvalidURL, ValueError):
             self._emit(False, "Could not reach Prowlarr", False, "Not checked")
