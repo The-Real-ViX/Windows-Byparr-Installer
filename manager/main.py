@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QStackedWidget,
     QTextEdit,
     QVBoxLayout,
@@ -278,6 +279,7 @@ class ByparrManager(QMainWindow):
             ("Integrations", "⇄", 1),
             ("Settings", "⚙", 2),
             ("Logs", "≡", 3),
+            ("Info / Credits", "ⓘ", 4),
         ]:
             button = QPushButton(f"  {symbol}     {label}")
             button.setObjectName("nav")
@@ -298,6 +300,7 @@ class ByparrManager(QMainWindow):
         self.pages.addWidget(self.create_integrations())
         self.pages.addWidget(self.create_settings())
         self.pages.addWidget(self.create_logs())
+        self.pages.addWidget(self.create_info())
 
         root.addWidget(sidebar)
         root.addWidget(self.pages, 1)
@@ -729,6 +732,120 @@ class ByparrManager(QMainWindow):
             "Logs exported",
             f"Your logs were saved successfully to:\n{file_path}",
         )
+
+    def create_info(self):
+        """Show application identity, upstream attribution, licences, and project links."""
+        page = QWidget()
+        outer_layout = QVBoxLayout(page)
+        outer_layout.setContentsMargins(38, 32, 38, 30)
+        outer_layout.setSpacing(18)
+        outer_layout.addLayout(self.page_header(
+            "About this application", "Info / Credits",
+            "Project details, acknowledgements, licence information and useful links."
+        ))
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 8, 0)
+        layout.setSpacing(14)
+
+        about_panel, about_layout = self.make_panel(
+            "Byparr Manager",
+            "An independent Windows 11 installer and desktop management interface "
+            "for the Byparr browser-challenge solving engine."
+        )
+        about_text = QLabel(
+            "<b>Application version:</b> 0.4.0<br>"
+            "<b>Maintained by:</b> RedHeX<br>"
+            "<b>Project credits:</b> RedHeX &amp; The TinMan"
+        )
+        about_text.setTextFormat(Qt.RichText)
+        about_text.setWordWrap(True)
+        about_text.setObjectName("muted")
+        about_layout.addWidget(about_text)
+        layout.addWidget(about_panel)
+
+        upstream_panel, upstream_layout = self.make_panel(
+            "Original Byparr project",
+            "The bundled browser engine is the original Byparr project, not software "
+            "written by the Manager project."
+        )
+        upstream_text = QLabel(
+            "Created and maintained by <b>ThePhaseless</b>.<br>"
+            "The source revision bundled by this build is pinned in the project "
+            "file UPSTREAM.lock.json."
+        )
+        upstream_text.setObjectName("muted")
+        upstream_text.setWordWrap(True)
+        upstream_layout.addWidget(upstream_text)
+        upstream_link = QLabel(
+            '<a href="https://github.com/ThePhaseless/Byparr">'
+            "Open the original Byparr project on GitHub</a>"
+        )
+        upstream_link.setOpenExternalLinks(True)
+        upstream_layout.addWidget(upstream_link)
+        layout.addWidget(upstream_panel)
+
+        links_panel, links_layout = self.make_panel(
+            "Project links",
+            "Find the source code, project information and the original engine."
+        )
+        for label, url in [
+            ("Byparr Manager source repository",
+             "https://github.com/The-Real-ViX/Windows-Byparr-Installer"),
+            ("Project README and documentation",
+             "https://github.com/The-Real-ViX/Windows-Byparr-Installer#readme"),
+            ("Original Byparr engine",
+             "https://github.com/ThePhaseless/Byparr"),
+            ("GNU General Public License v3",
+             "https://www.gnu.org/licenses/gpl-3.0.html"),
+        ]:
+            link = QLabel(f'<a href="{url}">{label}</a>')
+            link.setOpenExternalLinks(True)
+            links_layout.addWidget(link)
+        layout.addWidget(links_panel)
+
+        licence_panel, licence_layout = self.make_panel(
+            "Licences and acknowledgements",
+            "The original Byparr engine is distributed under the GNU General Public "
+            "License, version 3 (GPL-3.0). The complete licence text and third-party "
+            "notices are supplied as separate files with the application."
+        )
+        licence_text = QLabel(
+            "Please retain the original authors' copyright and licence notices. "
+            "Other bundled components have their own licence terms; consult "
+            "THIRD_PARTY_NOTICES.md for the component and redistribution information "
+            "provided with this build."
+        )
+        licence_text.setObjectName("muted")
+        licence_text.setWordWrap(True)
+        licence_layout.addWidget(licence_text)
+        layout.addWidget(licence_panel)
+
+        disclaimer_panel, disclaimer_layout = self.make_panel(
+            "Independent project and warranty notice",
+            "Byparr Manager is an independent community project. It is not affiliated "
+            "with, endorsed by, or an official release of ThePhaseless or the original "
+            "Byparr project. The Byparr name and upstream work remain attributed to "
+            "their respective authors."
+        )
+        disclaimer_text = QLabel(
+            "This application is provided without warranty, to the extent permitted "
+            "by applicable law. See the included GPL-3.0 licence and third-party "
+            "notices for the terms that apply to the bundled software."
+        )
+        disclaimer_text.setObjectName("muted")
+        disclaimer_text.setWordWrap(True)
+        disclaimer_layout.addWidget(disclaimer_text)
+        layout.addWidget(disclaimer_panel)
+
+        layout.addStretch()
+        scroll.setWidget(content)
+        outer_layout.addWidget(scroll, 1)
+        return page
 
     def create_logs(self):
         page = QWidget()
