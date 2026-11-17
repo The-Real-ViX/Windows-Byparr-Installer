@@ -47,3 +47,44 @@ Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; Flags: postin
 
 [UninstallDelete]
 Type: files; Name: "{autodesktop}\{#AppName}.lnk"
+
+[Code]
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  ResultCode: Integer;
+begin
+  if CurUninstallStep = usUninstall then
+  begin
+    if MsgBox(
+      'Would you also like to remove your saved Byparr Manager settings, browser cache, and Prowlarr/Jackett API keys from this computer?' + #13#10 + #13#10 +
+      'Choose No to keep this personal data for a future reinstall. This full cleanup cannot be undone.',
+      mbConfirmation, MB_YESNO
+    ) = IDYES then
+    begin
+      if FileExists(ExpandConstant('{app}\\ByparrManager.exe')) then
+      begin
+        if (not Exec(
+          ExpandConstant('{app}\\ByparrManager.exe'),
+          '--full-uninstall-cleanup',
+          ExpandConstant('{app}'),
+          SW_HIDE,
+          ewWaitUntilTerminated,
+          ResultCode
+        )) or (ResultCode <> 0) then
+        begin
+          MsgBox(
+            'The full cleanup could not be completed. The application will still be uninstalled, but some settings, cache, or saved credentials may remain.',
+            mbError, MB_OK
+          );
+        end;
+      end
+      else
+      begin
+        MsgBox(
+          'The cleanup helper was not found. The application will still be uninstalled, but personal settings, cache, or saved credentials may remain.',
+          mbError, MB_OK
+        );
+      end;
+    end;
+  end;
+end;
