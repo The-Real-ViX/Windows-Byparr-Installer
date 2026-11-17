@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security and sensitive disclosures
+    url: https://github.com/The-Real-ViX/Windows-Byparr-Installer/blob/main/SECURITY.md
+    about: Please read this before reporting a security issue. Do not post secrets or vulnerabilities publicly.
