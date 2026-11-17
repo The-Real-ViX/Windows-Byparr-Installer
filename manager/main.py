@@ -692,30 +692,30 @@ class ByparrManager(QMainWindow):
             file_path += ".txt"
 
         header = (
-            "Byparr Manager log export\\n"
-            f"Exported: {exported_at}\\n"
-            "Interface version: 0.4\\n"
-            f"API endpoint: {api_endpoint(self.api_host, self.api_port)}\\n"
+            "Byparr Manager log export\n"
+            f"Exported: {exported_at}\n"
+            "Interface version: 0.4\n"
+            f"API endpoint: {api_endpoint(self.api_host, self.api_port)}\n"
             + "=" * 72
-            + "\\n\\n"
+            + "\n\n"
         )
         try:
-            with open(file_path, "w", encoding="utf-8", newline="\\n") as log_file:
+            with open(file_path, "w", encoding="utf-8", newline="\n") as log_file:
                 log_file.write(header)
                 log_file.write(self.log_view.toPlainText())
-                log_file.write("\\n")
+                log_file.write("\n")
         except OSError as error:
             QMessageBox.warning(
                 self,
                 "Could not export logs",
-                f"The log file could not be saved:\\n{error}",
+                f"The log file could not be saved:\n{error}",
             )
             return
 
         QMessageBox.information(
             self,
             "Logs exported",
-            f"Your logs were saved successfully to:\\n{file_path}",
+            f"Your logs were saved successfully to:\n{file_path}",
         )
 
     def create_logs(self):
