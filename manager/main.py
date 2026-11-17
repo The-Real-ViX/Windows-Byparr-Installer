@@ -220,6 +220,20 @@ class ByparrManager(QMainWindow):
                 border: none;
                 border-radius: 2px;
             }
+            QPushButton#danger {
+                background: #8f3942;
+                border: 1px solid #ad4a55;
+                color: #ffffff;
+                padding: 9px 15px;
+                border-radius: 6px;
+                font-weight: 700;
+            }
+            QPushButton#danger:hover {
+                background: #a94752;
+            }
+            QPushButton#danger:pressed {
+                background: #743039;
+            }
             QPushButton {
                 background: #273244;
                 color: #e8eef8;
@@ -500,6 +514,13 @@ class ByparrManager(QMainWindow):
         controls.addWidget(self.restart_button)
 
         controls.addStretch()
+
+        self.exit_button = QPushButton("Exit Application")
+        self.exit_button.setCursor(Qt.PointingHandCursor)
+        self.exit_button.setObjectName("danger")
+        self.exit_button.clicked.connect(self.request_exit)
+        controls.addWidget(self.exit_button)
+
         panel_layout.addLayout(controls)
         layout.addWidget(panel)
 
@@ -556,9 +577,20 @@ class ByparrManager(QMainWindow):
         if hasattr(self, "log_view"):
             self.log_view.append(message)
 
+    def request_exit(self):
+        answer = QMessageBox.question(
+            self,
+            "Exit Byparr Manager",
+            "Exit the application and stop the Byparr engine?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer == QMessageBox.Yes:
+            self.close()
+
     def closeEvent(self, event):
         self.engine_controller.shutdown()
-        super().closeEvent(event)
+        event.accept()
 
     def check_api_connection(self):
         if hasattr(self, "api_worker") and self.api_worker.isRunning():
