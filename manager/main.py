@@ -4,16 +4,19 @@ import ipaddress
 import re
 import secrets
 import sys
+from datetime import datetime
 
 import httpx
 from PySide6.QtCore import QSettings, Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QApplication,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QStackedWidget,
     QTextEdit,
@@ -673,6 +676,48 @@ class ByparrManager(QMainWindow):
         self.api_port_input.setText(str(DEFAULT_API_PORT))
         self.save_api_settings()
 
+    def export_logs(self):
+        """Save the currently available Manager and engine log output as UTF-8 text."""
+        exported_at = datetime.now().astimezone().isoformat(timespec="seconds")
+        suggested_name = datetime.now().strftime("ByparrManager-logs-%Y%m%d-%H%M%S.txt")
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Byparr Manager logs",
+            suggested_name,
+            "Text files (*.txt);;All files (*)",
+        )
+        if not file_path:
+            return
+        if not file_path.lower().endswith(".txt"):
+            file_path += ".txt"
+
+        header = (
+            "Byparr Manager log export\\n"
+            f"Exported: {exported_at}\\n"
+            "Interface version: 0.4\\n"
+            f"API endpoint: {api_endpoint(self.api_host, self.api_port)}\\n"
+            + "=" * 72
+            + "\\n\\n"
+        )
+        try:
+            with open(file_path, "w", encoding="utf-8", newline="\\n") as log_file:
+                log_file.write(header)
+                log_file.write(self.log_view.toPlainText())
+                log_file.write("\\n")
+        except OSError as error:
+            QMessageBox.warning(
+                self,
+                "Could not export logs",
+                f"The log file could not be saved:\\n{error}",
+            )
+            return
+
+        QMessageBox.information(
+            self,
+            "Logs exported",
+            f"Your logs were saved successfully to:\\n{file_path}",
+        )
+
     def create_logs(self):
         page = QWidget()
         layout = QVBoxLayout(page)
@@ -687,6 +732,15 @@ class ByparrManager(QMainWindow):
             "Application activity",
             "Live output from the bundled Byparr engine appears here."
         )
+        actions = QHBoxLayout()
+        export_button = QPushButton("Export logs")
+        export_button.setObjectName("primary")
+        export_button.setCursor(Qt.PointingHandCursor)
+        export_button.clicked.connect(self.export_logs)
+        actions.addWidget(export_button)
+        actions.addStretch()
+        panel_layout.addLayout(actions)
+
         log_view = QTextEdit()
         self.log_view = log_view
         log_view.setReadOnly(True)
