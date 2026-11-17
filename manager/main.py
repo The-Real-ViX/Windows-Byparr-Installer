@@ -444,9 +444,17 @@ class ByparrManager(QMainWindow):
         metrics.addWidget(self.make_metric(
             "API port", "8191", "Default local API endpoint"
         ))
-        metrics.addWidget(self.make_metric(
-            "Integrations", "2 planned", "Prowlarr and Jackett"
-        ))
+        integration_metric = self.make_metric(
+            "API keys", "Checking...", "Saved integration credentials"
+        )
+        metrics.addWidget(integration_metric)
+        self.integration_metric_value = integration_metric.findChild(
+            QLabel, "metric_value"
+        )
+        self.integration_metric_note = integration_metric.findChildren(
+            QLabel, "muted"
+        )[-1]
+        self.update_integration_metric()
         layout.addLayout(metrics)
 
         panel, panel_layout = self.make_panel(
@@ -670,6 +678,26 @@ class ByparrManager(QMainWindow):
         self.browser_health_status.setStyleSheet(f"color: {color};")
         self.append_log(f"Browser health check: {message}")
 
+    def update_integration_metric(self):
+        """Show saved credentials, without implying the services are connected."""
+        saved = []
+        for integration_id, name in (("prowlarr", "Prowlarr"), ("jackett", "Jackett")):
+            try:
+                if self.secret_store.get(integration_id):
+                    saved.append(name)
+            except SecretStorageError:
+                continue
+
+        count = len(saved)
+        self.integration_metric_value.setText(
+            "None saved" if count == 0 else f"{count} saved"
+        )
+        self.integration_metric_note.setText(
+            "No API keys stored"
+            if count == 0
+            else f"{', '.join(saved)} API key{'s' if count > 1 else ''} stored securely"
+        )
+
     def create_integrations(self):
         page = QWidget()
         layout = QVBoxLayout(page)
@@ -735,6 +763,7 @@ class ByparrManager(QMainWindow):
             key_input.clear()
             status.setText("API key saved in the operating-system credential vault.")
             status.setStyleSheet("color: #48c78e;")
+            self.update_integration_metric()
 
         save_button.clicked.connect(save_secret)
         actions.addWidget(save_button)
@@ -752,6 +781,7 @@ class ByparrManager(QMainWindow):
             key_input.clear()
             status.setText("Saved API key removed from the credential vault.")
             status.setStyleSheet("color: #98a5b8;")
+            self.update_integration_metric()
 
         remove_button.clicked.connect(remove_secret)
         actions.addWidget(remove_button)
