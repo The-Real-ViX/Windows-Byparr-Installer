@@ -397,9 +397,9 @@ class ByparrManager(QMainWindow):
         self.status_dot.setStyleSheet("color: #e7bd70; font-size: 18px;")
         status_row.addWidget(self.status_dot, 0, Qt.AlignVCenter)
 
-        self.api_status = QLabel("Not checked")
-        self.api_status.setObjectName("status_value")
-        status_row.addWidget(self.api_status)
+        self.engine_status = QLabel("Stopped")
+        self.engine_status.setObjectName("status_value")
+        status_row.addWidget(self.engine_status)
         status_row.addStretch()
         panel_layout.addLayout(status_row)
 
@@ -408,6 +408,14 @@ class ByparrManager(QMainWindow):
         )
         self.endpoint_label.setObjectName("muted")
         panel_layout.addWidget(self.endpoint_label)
+
+        api_row = QHBoxLayout()
+        api_row.addWidget(QLabel("API connection"))
+        self.api_connection_status = QLabel("Not checked")
+        self.api_connection_status.setObjectName("muted")
+        api_row.addWidget(self.api_connection_status)
+        api_row.addStretch()
+        panel_layout.addLayout(api_row)
 
         controls = QHBoxLayout()
         controls.setSpacing(10)
@@ -462,7 +470,7 @@ class ByparrManager(QMainWindow):
         self.engine_controller.restart()
 
     def handle_engine_status(self, status):
-        self.api_status.setText(status)
+        self.engine_status.setText(status)
         colors = {
             "Running": "#48c78e",
             "Stopped": "#98a5b8",
@@ -493,8 +501,8 @@ class ByparrManager(QMainWindow):
         if hasattr(self, "api_worker") and self.api_worker.isRunning():
             return
 
-        self.api_status.setText("Checking connection...")
-        self.status_dot.setStyleSheet("color: #e7bd70; font-size: 18px;")
+        self.api_connection_status.setText("Checking...")
+        self.api_connection_status.setStyleSheet("color: #e7bd70;")
         self.check_button.setEnabled(False)
 
         self.api_worker = ApiCheckWorker(api_endpoint(self.api_host, self.api_port), self)
@@ -505,9 +513,9 @@ class ByparrManager(QMainWindow):
         self.api_worker.start()
 
     def handle_api_check_result(self, success, message):
-        self.api_status.setText(message)
+        self.api_connection_status.setText(message)
         color = "#48c78e" if success else "#e57373"
-        self.status_dot.setStyleSheet(f"color: {color}; font-size: 18px;")
+        self.api_connection_status.setStyleSheet(f"color: {color};")
 
     def create_integrations(self):
         page = QWidget()
@@ -744,14 +752,14 @@ class ByparrManager(QMainWindow):
         log_view = QTextEdit()
         self.log_view = log_view
         log_view.setReadOnly(True)
+        log_view.setMinimumHeight(360)
         log_view.setPlainText(
             "Byparr Manager started.\n"
             "Interface version: 0.4\n"
             "Waiting for engine activity..."
         )
-        panel_layout.addWidget(log_view)
-        layout.addWidget(panel)
-        layout.addStretch()
+        panel_layout.addWidget(log_view, 1)
+        layout.addWidget(panel, 1)
         return page
 
 
