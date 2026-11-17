@@ -53,6 +53,11 @@ class EngineController(QObject):
         return self.application_root / "engine" / "ByparrEngine" / "ByparrEngine.exe"
 
     @property
+    def browser_engine_path(self) -> Path:
+        """Return the read-only patched browser engine bundled with the application."""
+        return self.application_root / "engine" / "browser-engine"
+
+    @property
     def browser_cache_path(self) -> Path:
         """Return a per-user cache directory that is writable after installation."""
         app_data = QStandardPaths.writableLocation(
@@ -85,6 +90,7 @@ class EngineController(QObject):
         environment = QProcessEnvironment.systemEnvironment()
         environment.insert("HOST", "127.0.0.1")
         environment.insert("PORT", str(self.port))
+        environment.insert("INVISIBLE_PLAYWRIGHT_ENGINE_DIR", str(self.browser_engine_path))
         environment.insert("INVISIBLE_PLAYWRIGHT_CACHE_DIR", str(self.browser_cache_path))
         environment.insert("BROWSER_LOCALE", "en-GB")
         self.process.setProcessEnvironment(environment)
