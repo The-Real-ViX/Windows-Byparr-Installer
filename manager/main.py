@@ -716,11 +716,11 @@ def run_credential_smoke_test():
             raise RuntimeError("Credential vault entry still exists after deletion.")
         print("Credential vault round-trip passed.")
         return 0
-    except Exception as error:
+    except (SecretStorageError, RuntimeError) as error:
         try:
             store.delete(integration)
-        except Exception:
-            pass
+        except SecretStorageError as cleanup_error:
+            print(f"Credential test cleanup warning: {cleanup_error}", file=sys.stderr)
         print(f"Credential vault smoke test failed: {error}", file=sys.stderr)
         return 1
 
