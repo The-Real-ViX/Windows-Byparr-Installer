@@ -95,6 +95,42 @@ class ApiCheckWorker(QThread):
             self.result.emit(False, "API not responding")
 
 
+class BrowserHealthCheckWorker(QThread):
+    """Run Byparr's browser-backed health check without freezing the interface."""
+
+    result = Signal(bool, str)
+
+    def __init__(self, url, parent=None):
+        super().__init__(parent)
+        self.url = url
+
+    def run(self):
+        try:
+            # Upstream /health launches a browser and navigates to Google.
+            # Allow more than its usual 60-second navigation timeout.
+            response = httpx.get(f"{self.url}/health", timeout=75.0)
+            if response.status_code != 200:
+                self.result.emit(
+                    False,
+                    f"Health check returned HTTP {response.status_code}",
+                )
+                return
+
+            payload = response.json()
+            if payload.get("msg") == "Byparr is working!":
+                version = payload.get("version") or "unknown"
+                self.result.emit(True, f"Healthy (version {version})")
+            else:
+                self.result.emit(False, "Unexpected health-check response")
+        except httpx.TimeoutException:
+            self.result.emit(
+                False,
+                "Health check timed out. The API may still be available.",
+            )
+        except (httpx.RequestError, ValueError):
+            self.result.emit(False, "Browser health check could not be completed.")
+
+
 class ByparrManager(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -420,6 +456,14 @@ class ByparrManager(QMainWindow):
         api_row.addStretch()
         panel_layout.addLayout(api_row)
 
+        browser_row = QHBoxLayout()
+        browser_row.addWidget(QLabel("Browser health"))
+        self.browser_health_status = QLabel("Not checked")
+        self.browser_health_status.setObjectName("muted")
+        browser_row.addWidget(self.browser_health_status)
+        browser_row.addStretch()
+        panel_layout.addLayout(browser_row)
+
         controls = QHBoxLayout()
         controls.setSpacing(10)
 
@@ -428,6 +472,11 @@ class ByparrManager(QMainWindow):
         self.check_button.setCursor(Qt.PointingHandCursor)
         self.check_button.clicked.connect(self.check_api_connection)
         controls.addWidget(self.check_button)
+
+        self.browser_health_button = QPushButton("Run browser health check")
+        self.browser_health_button.setCursor(Qt.PointingHandCursor)
+        self.browser_health_button.clicked.connect(self.check_browser_health)
+        controls.addWidget(self.browser_health_button)
 
         self.start_button = QPushButton("Start engine")
         self.start_button.setObjectName("primary")
@@ -495,6 +544,12 @@ class ByparrManager(QMainWindow):
         })
         self.stop_button.setEnabled(status in {"Starting", "Running", "Restarting"})
         self.restart_button.setEnabled(status in {"Starting", "Running"})
+        if status in {"Stopped", "Engine files missing", "Failed to start"}:
+            self.browser_health_status.setText("Not checked")
+            self.browser_health_status.setStyleSheet("color: #98a5b8;")
+            self.browser_health_button.setEnabled(False)
+        else:
+            self.browser_health_button.setEnabled(status == "Running")
 
     def append_log(self, message):
         if hasattr(self, "log_view"):
@@ -523,6 +578,38 @@ class ByparrManager(QMainWindow):
         self.api_connection_status.setText(message)
         color = "#48c78e" if success else "#e57373"
         self.api_connection_status.setStyleSheet(f"color: {color};")
+
+    def check_browser_health(self):
+        if self.engine_controller._status != "Running":
+            self.browser_health_status.setText("Start the engine first")
+            self.browser_health_status.setStyleSheet("color: #e7bd70;")
+            return
+        if hasattr(self, "browser_health_worker") and self.browser_health_worker.isRunning():
+            return
+
+        self.browser_health_status.setText(
+            "Checking browser... this can take up to 75 seconds"
+        )
+        self.browser_health_status.setStyleSheet("color: #e7bd70;")
+        self.browser_health_button.setEnabled(False)
+        self.browser_health_worker = BrowserHealthCheckWorker(
+            api_endpoint(self.api_host, self.api_port), self
+        )
+        self.browser_health_worker.result.connect(
+            self.handle_browser_health_result
+        )
+        self.browser_health_worker.finished.connect(
+            lambda: self.browser_health_button.setEnabled(
+                self.engine_controller._status == "Running"
+            )
+        )
+        self.browser_health_worker.start()
+
+    def handle_browser_health_result(self, success, message):
+        self.browser_health_status.setText(message)
+        color = "#48c78e" if success else "#e57373"
+        self.browser_health_status.setStyleSheet(f"color: {color};")
+        self.append_log(f"Browser health check: {message}")
 
     def create_integrations(self):
         page = QWidget()
