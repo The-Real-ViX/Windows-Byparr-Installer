@@ -20,7 +20,6 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
-    QGridLayout,
     QScrollArea,
     QStackedWidget,
     QTextEdit,
