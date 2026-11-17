@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from build_info import APP_VERSION, BUILD_NUMBER
 from engine_controller import EngineController
 from secret_store import SecretStorageError, SecretStore
 
@@ -342,7 +343,7 @@ class ByparrManager(QMainWindow):
             self.nav_buttons.append(button)
 
         side.addStretch()
-        version = QLabel("BY PARR MANAGER  •  v0.4")
+        version = QLabel(f"VERSION {APP_VERSION}  •  BUILD {BUILD_NUMBER}")
         version.setObjectName("version")
         side.addWidget(version)
 
