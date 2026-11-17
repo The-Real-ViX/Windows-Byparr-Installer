@@ -434,11 +434,15 @@ class ByparrManager(QMainWindow):
 
         self.stop_button = QPushButton("Stop engine")
         self.stop_button.setEnabled(False)
+        self.stop_button.setCursor(Qt.PointingHandCursor)
+        self.stop_button.setObjectName("primary")
         self.stop_button.clicked.connect(self.stop_engine)
         controls.addWidget(self.stop_button)
 
         self.restart_button = QPushButton("Restart engine")
         self.restart_button.setEnabled(False)
+        self.restart_button.setCursor(Qt.PointingHandCursor)
+        self.restart_button.setObjectName("primary")
         self.restart_button.clicked.connect(self.restart_engine)
         controls.addWidget(self.restart_button)
 
