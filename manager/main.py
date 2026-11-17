@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QGridLayout,
     QScrollArea,
     QStackedWidget,
     QTextEdit,
@@ -266,6 +267,11 @@ class ByparrManager(QMainWindow):
             QPushButton#primary:hover {
                 background: #5279ef;
             }
+            QPushButton#primary:disabled {
+                color: #8794a8;
+                background: #2b3545;
+                border: 1px solid #39475b;
+            }
             QPushButton#nav {
                 background: transparent;
                 color: #aab6c8;
@@ -410,6 +416,8 @@ class ByparrManager(QMainWindow):
         caption.setObjectName("eyebrow")
         number = QLabel(value)
         number.setObjectName("metric_value")
+        if title == "Engine":
+            self.engine_metric_value = number
         detail = QLabel(note)
         detail.setObjectName("muted")
         detail.setWordWrap(True)
@@ -481,54 +489,63 @@ class ByparrManager(QMainWindow):
         browser_row.addStretch()
         panel_layout.addLayout(browser_row)
 
-        controls = QHBoxLayout()
+        controls = QVBoxLayout()
         controls.setSpacing(10)
+
+        api_controls = QHBoxLayout()
+        api_controls.setSpacing(10)
 
         self.check_button = QPushButton("Check API")
         self.check_button.setObjectName("primary")
         self.check_button.setToolTip("Check the Byparr API connection")
-        self.check_button.setMinimumWidth(112)
+        self.check_button.setMinimumWidth(140)
         self.check_button.setCursor(Qt.PointingHandCursor)
         self.check_button.clicked.connect(self.check_api_connection)
-        controls.addWidget(self.check_button)
+        api_controls.addWidget(self.check_button)
 
         self.browser_health_button = QPushButton("Browser Health")
         self.browser_health_button.setObjectName("primary")
         self.browser_health_button.setToolTip("Run the browser-backed Byparr health check (may take up to 75 seconds)")
-        self.browser_health_button.setMinimumWidth(132)
+        self.browser_health_button.setMinimumWidth(160)
         self.browser_health_button.setEnabled(False)
         self.browser_health_button.setCursor(Qt.PointingHandCursor)
         self.browser_health_button.clicked.connect(self.check_browser_health)
-        controls.addWidget(self.browser_health_button)
+        api_controls.addWidget(self.browser_health_button)
+        api_controls.addStretch()
+        controls.addLayout(api_controls)
+
+        engine_controls = QHBoxLayout()
+        engine_controls.setSpacing(10)
 
         self.start_button = QPushButton("Start engine")
         self.start_button.setObjectName("primary")
         self.start_button.setCursor(Qt.PointingHandCursor)
         self.start_button.clicked.connect(self.start_engine)
-        controls.addWidget(self.start_button)
+        engine_controls.addWidget(self.start_button)
 
         self.stop_button = QPushButton("Stop engine")
         self.stop_button.setEnabled(False)
         self.stop_button.setCursor(Qt.PointingHandCursor)
         self.stop_button.setObjectName("primary")
         self.stop_button.clicked.connect(self.stop_engine)
-        controls.addWidget(self.stop_button)
+        engine_controls.addWidget(self.stop_button)
 
         self.restart_button = QPushButton("Restart engine")
         self.restart_button.setEnabled(False)
         self.restart_button.setCursor(Qt.PointingHandCursor)
         self.restart_button.setObjectName("primary")
         self.restart_button.clicked.connect(self.restart_engine)
-        controls.addWidget(self.restart_button)
+        engine_controls.addWidget(self.restart_button)
 
-        controls.addStretch()
+        engine_controls.addStretch()
 
         self.exit_button = QPushButton("Exit Application")
         self.exit_button.setCursor(Qt.PointingHandCursor)
         self.exit_button.setObjectName("danger")
         self.exit_button.clicked.connect(self.request_exit)
-        controls.addWidget(self.exit_button)
+        engine_controls.addWidget(self.exit_button)
 
+        controls.addLayout(engine_controls)
         panel_layout.addLayout(controls)
         layout.addWidget(panel)
 
@@ -557,6 +574,8 @@ class ByparrManager(QMainWindow):
 
     def handle_engine_status(self, status):
         self.engine_status.setText(status)
+        if hasattr(self, "engine_metric_value"):
+            self.engine_metric_value.setText(status)
         colors = {
             "Running": "#48c78e",
             "Stopped": "#98a5b8",
