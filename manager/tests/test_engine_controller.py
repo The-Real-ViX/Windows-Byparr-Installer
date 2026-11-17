@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from PySide6.QtCore import QStandardPaths
+
 from engine_controller import EngineController
 
 
@@ -15,9 +17,15 @@ def test_browser_cache_uses_user_writable_app_data():
     controller = EngineController()
     cache = controller.browser_cache_path
 
+    expected_app_data = Path(
+        QStandardPaths.writableLocation(QStandardPaths.AppLocalDataLocation)
+    )
     assert cache.name == "browser-cache"
-    assert "ByparrManager" in str(cache)
-    assert cache != controller.application_root / "engine" / "browser-cache"
+    assert cache.is_absolute()
+    assert cache.parent == expected_app_data
+    assert not cache.is_relative_to(
+        controller.application_root / "engine"
+    )
 
 
 def test_missing_engine_is_reported(qtbot, tmp_path: Path):
