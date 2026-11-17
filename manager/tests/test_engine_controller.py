@@ -13,6 +13,12 @@ def test_engine_executable_is_relative_to_application_root(tmp_path: Path):
     )
 
 
+def test_browser_engine_is_bundled_with_application(tmp_path: Path):
+    controller = EngineController(application_root=tmp_path)
+
+    assert controller.browser_engine_path == tmp_path / "engine" / "browser-engine"
+
+
 def test_browser_cache_uses_user_writable_app_data():
     controller = EngineController()
     cache = controller.browser_cache_path
