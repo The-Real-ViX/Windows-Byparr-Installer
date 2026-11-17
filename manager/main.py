@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 
 from build_info import APP_VERSION, BUILD_NUMBER
 from engine_controller import EngineController
+from prowlarr_check import ProwlarrIntegrationCheckWorker
 from secret_store import SecretStorageError, SecretStore
 
 
@@ -146,6 +147,9 @@ class ByparrManager(QMainWindow):
         self.engine_controller = EngineController(self)
         self.engine_controller.status_changed.connect(self.handle_engine_status)
         self.engine_controller.log_message.connect(self.append_log)
+        self.prowlarr_url = self.settings.value(
+            "integrations/prowlarr_url", "http://127.0.0.1:9696", type=str
+        )
         self.api_host = self.settings.value("api/host", DEFAULT_API_HOST, type=str)
         self.api_port = self.settings.value("api/port", DEFAULT_API_PORT, type=int)
         try:
@@ -496,6 +500,22 @@ class ByparrManager(QMainWindow):
         browser_row.addStretch()
         panel_layout.addLayout(browser_row)
 
+        prowlarr_row = QHBoxLayout()
+        prowlarr_row.addWidget(QLabel("Prowlarr"))
+        self.prowlarr_connection_status = QLabel("Not checked")
+        self.prowlarr_connection_status.setObjectName("muted")
+        prowlarr_row.addWidget(self.prowlarr_connection_status)
+        prowlarr_row.addStretch()
+        panel_layout.addLayout(prowlarr_row)
+
+        qbittorrent_row = QHBoxLayout()
+        qbittorrent_row.addWidget(QLabel("qBittorrent"))
+        self.qbittorrent_connection_status = QLabel("Not checked")
+        self.qbittorrent_connection_status.setObjectName("muted")
+        qbittorrent_row.addWidget(self.qbittorrent_connection_status)
+        qbittorrent_row.addStretch()
+        panel_layout.addLayout(qbittorrent_row)
+
         controls = QVBoxLayout()
         controls.setSpacing(10)
 
@@ -518,6 +538,16 @@ class ByparrManager(QMainWindow):
         self.browser_health_button.setCursor(Qt.PointingHandCursor)
         self.browser_health_button.clicked.connect(self.check_browser_health)
         api_controls.addWidget(self.browser_health_button)
+
+        self.prowlarr_check_button = QPushButton("Check Prowlarr + qBittorrent")
+        self.prowlarr_check_button.setObjectName("primary")
+        self.prowlarr_check_button.setToolTip(
+            "Check Prowlarr and test its configured qBittorrent download client"
+        )
+        self.prowlarr_check_button.setMinimumWidth(225)
+        self.prowlarr_check_button.setCursor(Qt.PointingHandCursor)
+        self.prowlarr_check_button.clicked.connect(self.check_prowlarr_integration)
+        api_controls.addWidget(self.prowlarr_check_button)
         api_controls.addStretch()
         controls.addLayout(api_controls)
 
@@ -709,6 +739,23 @@ class ByparrManager(QMainWindow):
             "written to the Manager settings file."
         ))
 
+        address_panel, address_layout = self.make_panel(
+            "Prowlarr address",
+            "Enter the local Prowlarr address. The default installation uses port 9696."
+        )
+        self.prowlarr_url_input = QLineEdit(self.prowlarr_url)
+        self.prowlarr_url_input.setPlaceholderText("http://127.0.0.1:9696")
+        address_layout.addWidget(self.prowlarr_url_input)
+        save_address_button = QPushButton("Save Prowlarr address")
+        save_address_button.setObjectName("primary")
+        save_address_button.setCursor(Qt.PointingHandCursor)
+        save_address_button.clicked.connect(self.save_prowlarr_url)
+        address_layout.addWidget(save_address_button)
+        self.prowlarr_url_status = QLabel("Address is stored locally on this computer.")
+        self.prowlarr_url_status.setObjectName("muted")
+        address_layout.addWidget(self.prowlarr_url_status)
+        layout.addWidget(address_panel)
+
         self.add_integration_panel(
             layout,
             "Prowlarr",
@@ -724,6 +771,81 @@ class ByparrManager(QMainWindow):
 
         layout.addStretch()
         return page
+
+    def save_prowlarr_url(self):
+        value = self.prowlarr_url_input.text().strip().rstrip("/")
+        try:
+            parsed = httpx.URL(value)
+            if parsed.scheme not in ("http", "https") or not parsed.host:
+                raise ValueError
+            if parsed.username or parsed.password or parsed.query or parsed.fragment:
+                raise ValueError
+        except (ValueError, httpx.InvalidURL):
+            self.prowlarr_url_status.setText(
+                "Enter a valid http:// or https:// address without login details."
+            )
+            self.prowlarr_url_status.setStyleSheet("color: #e57373;")
+            return
+
+        self.prowlarr_url = value
+        self.settings.setValue("integrations/prowlarr_url", value)
+        self.settings.sync()
+        self.prowlarr_url_status.setText("Prowlarr address saved.")
+        self.prowlarr_url_status.setStyleSheet("color: #48c78e;")
+
+    def check_prowlarr_integration(self):
+        if hasattr(self, "prowlarr_worker") and self.prowlarr_worker.isRunning():
+            return
+        try:
+            api_key = self.secret_store.get("prowlarr")
+        except SecretStorageError:
+            api_key = None
+
+        if not api_key:
+            self.prowlarr_connection_status.setText("API key not saved")
+            self.prowlarr_connection_status.setStyleSheet("color: #e7bd70;")
+            self.qbittorrent_connection_status.setText("Not checked")
+            self.qbittorrent_connection_status.setStyleSheet("color: #98a5b8;")
+            self.change_page(1)
+            return
+
+        self.prowlarr_connection_status.setText("Checking...")
+        self.prowlarr_connection_status.setStyleSheet("color: #e7bd70;")
+        self.qbittorrent_connection_status.setText("Checking...")
+        self.qbittorrent_connection_status.setStyleSheet("color: #e7bd70;")
+        self.prowlarr_check_button.setEnabled(False)
+        self.prowlarr_worker = ProwlarrIntegrationCheckWorker(
+            self.prowlarr_url, api_key, self
+        )
+        self.prowlarr_worker.result.connect(self.handle_prowlarr_check_result)
+        self.prowlarr_worker.finished.connect(
+            lambda: self.prowlarr_check_button.setEnabled(True)
+        )
+        self.prowlarr_worker.start()
+
+    def handle_prowlarr_check_result(
+        self, prowlarr_ok, prowlarr_message, qbittorrent_ok, qbittorrent_message
+    ):
+        self.prowlarr_connection_status.setText(prowlarr_message)
+        prowlarr_color = "#48c78e" if prowlarr_ok else "#e57373"
+        self.prowlarr_connection_status.setStyleSheet(f"color: {prowlarr_color};")
+
+        self.qbittorrent_connection_status.setText(qbittorrent_message)
+        if qbittorrent_ok:
+            qbittorrent_color = "#48c78e"
+        elif "failed" in qbittorrent_message.lower():
+            qbittorrent_color = "#e57373"
+        elif qbittorrent_message in ("Not checked", "Not configured in Prowlarr"):
+            qbittorrent_color = "#98a5b8"
+        else:
+            qbittorrent_color = "#e7bd70"
+        self.qbittorrent_connection_status.setStyleSheet(
+            f"color: {qbittorrent_color};"
+        )
+        self.append_log(
+            f"Prowlarr integration check: {prowlarr_message}; "
+            f"qBittorrent: {qbittorrent_message}"
+        )
 
     def add_integration_panel(self, parent_layout, name, integration_id, description):
         panel, panel_layout = self.make_panel(name, description)
