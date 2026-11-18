@@ -89,3 +89,5 @@ def test_dashboard_script_uses_valid_newline_expression():
     from remote_access import DASHBOARD
 
     assert ".join(String.fromCharCode(10))" in DASHBOARD
+    assert "Live status updated:" in DASHBOARD
+    assert "setInterval(refresh,5000)" in DASHBOARD
