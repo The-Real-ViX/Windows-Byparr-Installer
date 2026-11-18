@@ -137,8 +137,9 @@ class EngineController(QObject):
             self.health_timer.stop()
             return
         try:
+            request_host = f"[{self.host}]" if ":" in self.host else self.host
             response = httpx.get(
-                f"http://{self.host}:{self.port}/openapi.json",
+                f"http://{request_host}:{self.port}/openapi.json",
                 timeout=0.4,
             )
             if response.status_code == 200:
