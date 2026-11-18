@@ -39,8 +39,11 @@ class ProwlarrSearchClient:
         )
         if response.status_code in (401, 403):
             raise RuntimeError("Prowlarr rejected its API key.")
-        response.raise_for_status()
-        payload = response.json()
+        try:
+            response.raise_for_status()
+            payload = response.json()
+        except httpx.HTTPError as error:
+            raise RuntimeError("Could not retrieve Prowlarr search results.") from error
         if not isinstance(payload, list):
             raise ValueError("Unexpected Prowlarr search response.")
         results = []
@@ -52,10 +55,18 @@ class ProwlarrSearchClient:
                 continue
             results.append({
                 "title": title[:500],
-                "indexer": str(item.get("indexer") or item.get("indexerName") or "Unknown indexer")[:120],
+                "indexer": str(
+                    item.get("indexer") or item.get("indexerName") or "Unknown indexer"
+                )[:120],
                 "size_label": self._size_label(item.get("size")),
-                "seeders": item.get("seeders") if isinstance(item.get("seeders"), int) else None,
-                "leechers": item.get("leechers") if isinstance(item.get("leechers"), int) else None,
+                "seeders": (
+                    item.get("seeders")
+                    if isinstance(item.get("seeders"), int) else None
+                ),
+                "leechers": (
+                    item.get("leechers")
+                    if isinstance(item.get("leechers"), int) else None
+                ),
                 "protocol": str(item.get("protocol") or "")[:40],
                 "publish_date": str(item.get("publishDate") or "")[:40],
             })
