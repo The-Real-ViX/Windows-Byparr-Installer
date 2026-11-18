@@ -28,7 +28,9 @@ def test_search_uses_api_key_header_and_returns_safe_release_fields(monkeypatch)
         ("query", "example"), ("type", "search"), ("limit", 50)
     ]
     assert captured["timeout"] == 180.0
-    assert result == [{
+    assert len(result) == 1
+    assert len(result[0]["grab_id"]) >= 20
+    assert {key: value for key, value in result[0].items() if key != "grab_id"} == {
         "title": "Example.Release.1080p",
         "indexer": "Example Indexer",
         "size_label": "1.0 GB",
@@ -36,7 +38,7 @@ def test_search_uses_api_key_header_and_returns_safe_release_fields(monkeypatch)
         "leechers": 3,
         "protocol": "torrent",
         "publish_date": "",
-    }]
+    }
     assert "downloadUrl" not in result[0]
     assert "secret-key" not in str(result)
 
@@ -94,3 +96,31 @@ def test_search_reports_timeout_clearly(monkeypatch):
     monkeypatch.setattr(httpx, "get", fake_get)
     with pytest.raises(RuntimeError, match="timed out after 180 seconds"):
         ProwlarrSearchClient("http://127.0.0.1:9696", "key").search("example")
+
+def test_grab_posts_selected_release_to_prowlarr_download_client(monkeypatch):
+    captured = {}
+    release = {"guid": "release-guid", "indexerId": 12, "title": "Example.Release"}
+
+    def fake_get(url, **kwargs):
+        return httpx.Response(200, json=[release], request=httpx.Request("GET", url))
+
+    def fake_post(url, **kwargs):
+        captured["url"] = url
+        captured.update(kwargs)
+        return httpx.Response(200, json={}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(httpx, "post", fake_post)
+    client = ProwlarrSearchClient("http://127.0.0.1:9696", "secret-key")
+    results = client.search("example")
+    client.grab(results[0]["grab_id"])
+    assert captured["url"] == "http://127.0.0.1:9696/api/v1/search"
+    assert captured["json"] == release
+    assert captured["headers"] == {"X-Api-Key": "secret-key"}
+    assert captured["timeout"] == 30.0
+
+
+def test_grab_rejects_expired_or_unknown_result():
+    client = ProwlarrSearchClient("http://127.0.0.1:9696", "key")
+    with pytest.raises(ValueError, match="expired"):
+        client.grab("unknown-result-handle")
