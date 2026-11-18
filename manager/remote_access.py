@@ -410,6 +410,7 @@ for(const item of [...items].reverse()){const b=document.createElement('button')
 b.addEventListener('click',()=>{document.querySelector('#search-query').value=item.query;renderSearchResults(item);document.querySelector('#search-message').textContent='Previous results · '+item.searched_at;});target.appendChild(b);}}
 document.querySelector('#search-form').addEventListener('submit',async event=>{event.preventDefault();
 const query=document.querySelector('#search-query').value.trim();const message=document.querySelector('#search-message');
+if(!csrf){message.textContent='Connecting to the dashboard…';return;}
 message.textContent='Searching Prowlarr…';try{const r=await fetch('/api/search',{method:'POST',credentials:'same-origin',
 headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({query})});
 const data=await r.json();if(!r.ok)throw new Error(data.error||('HTTP '+r.status));
