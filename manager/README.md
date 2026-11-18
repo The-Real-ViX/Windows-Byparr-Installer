@@ -40,7 +40,7 @@ The remote service binds to the specified Tailscale address only. It does not bi
 
 The password is not saved in plain text. Only a salted PBKDF2 verifier is stored in local application settings. Remote access stops when the Manager closes; enable it again manually when needed. Use a unique password, not your Windows, Prowlarr, or qBittorrent password.
 
-The initial remote dashboard provides engine status and start/stop/restart controls, API and browser-health status, Prowlarr/qBittorrent diagnostics, and recent redacted logs. It is an early feature and should be tested on your own trusted tailnet before relying on it. The Byparr engine API remains bound to localhost.
+The initial remote dashboard provides engine status and start/stop/restart controls, API and browser-health status, Prowlarr/qBittorrent diagnostics, and recent redacted logs. Remote-access audit events (successful/failed sign-ins, rate-limit blocks, sign-outs, session expiry, remote control requests, and dashboard shutdown) are also written to the normal Manager log with the username and connecting Tailscale IP where available. Passwords, session identifiers, cookies, and API keys are never logged. It is an early feature and should be tested on your own trusted tailnet before relying on it. The Byparr engine API remains bound to localhost.
 
 ## Reporting problems
 
