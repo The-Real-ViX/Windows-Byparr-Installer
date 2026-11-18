@@ -119,6 +119,9 @@ def test_remote_dashboard_contains_prowlarr_search_panel():
 
     assert "Prowlarr Search" in DASHBOARD
     assert "search-form" in DASHBOARD
+    assert 'id="clear-search"' in DASHBOARD
+    assert "Search cleared. Enter a new search when ready." in DASHBOARD
+    assert "clearButton.disabled=true" in DASHBOARD
     assert 'id="search-category"' in DASHBOARD
     assert 'value="movies"' in DASHBOARD
     assert 'value="tv"' in DASHBOARD
