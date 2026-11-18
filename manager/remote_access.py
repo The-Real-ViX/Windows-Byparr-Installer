@@ -346,7 +346,8 @@ document.querySelector('#api').textContent=d.api||'';
 document.querySelector('#browser').textContent='Browser health: '+(d.browser||'Not checked');
 document.querySelector('#prowlarr').textContent='Prowlarr: '+(d.prowlarr||'Not checked');
 document.querySelector('#qbittorrent').textContent='qBittorrent: '+(d.qbittorrent||'Not checked');
-document.querySelector('#logs').textContent=(Array.isArray(d.logs)?d.logs:[]).join(String.fromCharCode(10));\ndocument.querySelector('#updated').textContent='Live status updated: '+new Date().toLocaleTimeString();
+document.querySelector('#logs').textContent=(Array.isArray(d.logs)?d.logs:[]).join(String.fromCharCode(10));
+document.querySelector('#updated').textContent='Live status updated: '+new Date().toLocaleTimeString();
 }catch(error){const message='Dashboard data unavailable: '+(error&&error.message?error.message:'network or browser error');
 document.querySelector('#updated').textContent='Status refresh failed';document.querySelector('#engine').textContent=message;document.querySelector('#api').textContent='Check that the Windows Manager is still running and remote access is enabled.';
 document.querySelector('#logs').textContent=message;}}
