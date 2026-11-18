@@ -45,6 +45,11 @@ def test_password_policy_rejects_short_password():
         password_verifier("too-short")
 
 
+def test_password_policy_rejects_oversized_password():
+    with pytest.raises(ValueError, match="1024 characters"):
+        password_verifier("x" * 1025)
+
+
 def test_remote_log_redaction_masks_common_secrets():
     from remote_access import redact_log_line
 
