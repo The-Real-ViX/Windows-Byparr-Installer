@@ -91,3 +91,13 @@ def test_dashboard_script_uses_valid_newline_expression():
     assert ".join(String.fromCharCode(10))" in DASHBOARD
     assert "Live status updated:" in DASHBOARD
     assert "setInterval(refresh,5000)" in DASHBOARD
+
+
+
+def test_remote_dashboard_contains_prowlarr_search_panel():
+    from remote_access import DASHBOARD
+
+    assert "Prowlarr Search" in DASHBOARD
+    assert "search-form" in DASHBOARD
+    assert "fetch('/api/search'" in DASHBOARD
+    assert "renderSearchResults" in DASHBOARD
