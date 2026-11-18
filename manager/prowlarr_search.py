@@ -3,6 +3,17 @@
 import httpx
 
 
+SEARCH_CATEGORIES = {
+    "all": {"label": "All", "type": "search", "category": None},
+    "movies": {"label": "Movies", "type": "movie", "category": 2000},
+    "tv": {"label": "TV Shows", "type": "tvsearch", "category": 5000},
+    "audio": {"label": "Audio / Music", "type": "music", "category": 3000},
+    "books": {"label": "Books", "type": "book", "category": 7000},
+    "pc": {"label": "PC", "type": "search", "category": 4000},
+    "console": {"label": "Console", "type": "search", "category": 1000},
+}
+
+
 class ProwlarrSearchClient:
     """Execute a text search and return a small, safe release summary."""
 
@@ -26,15 +37,25 @@ class ProwlarrSearchClient:
             amount /= 1024
         return "Size unknown"
 
-    def search(self, query: str) -> list[dict]:
-        """Search all configured indexers; never return download URLs or API keys."""
+    def search(self, query: str, category: str = "all") -> list[dict]:
+        """Search configured indexers using a safe Prowlarr search mode/category."""
         parsed = httpx.URL(self.base_url)
         if parsed.scheme not in ("http", "https") or not parsed.host:
             raise ValueError("Invalid Prowlarr address.")
+        search_category = SEARCH_CATEGORIES.get(category)
+        if search_category is None:
+            raise ValueError("Choose a valid search category.")
+        params = [
+            ("query", query),
+            ("type", search_category["type"]),
+            ("limit", 50),
+        ]
+        if search_category["category"] is not None:
+            params.append(("categories", search_category["category"]))
         try:
             response = httpx.get(
                 f"{self.base_url}/api/v1/search",
-                params={"query": query, "type": "search", "limit": 50},
+                params=params,
                 headers={"X-Api-Key": self.api_key},
                 timeout=180.0,
             )
