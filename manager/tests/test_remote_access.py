@@ -186,3 +186,52 @@ def test_remote_username_rejects_log_injection():
             "100.101.20.30", 8765, "bad\\nuser", "00" * 16, "11" * 32,
             lambda: {}, lambda _action: None,
         )
+
+
+
+def test_remote_log_redaction_masks_json_credentials():
+    from remote_access import redact_log_line
+
+    line = '{"apiKey":"api-secret","password":"pw-secret","Authorization":"Bearer auth-secret"}'
+    result = redact_log_line(line)
+    for secret in ("api-secret", "pw-secret", "auth-secret"):
+        assert secret not in result
+    assert result.count("[REDACTED]") >= 3
+
+
+def test_password_verification_rejects_invalid_unicode():
+    from remote_access import verify_password
+
+    salt, verifier = password_verifier("a-long-test-password-123!")
+    assert not verify_password("\ud800", salt, verifier)
+
+
+def test_release_grab_handle_is_single_use(monkeypatch):
+    import time
+    import httpx
+    from prowlarr_search import ProwlarrSearchClient
+
+    client = ProwlarrSearchClient("http://127.0.0.1:9696", "test-api-key")
+    client._releases["opaque-release-handle-123456"] = {
+        "release": {"guid": "release-guid", "indexerId": 1},
+        "expires": time.monotonic() + 60,
+    }
+
+    class Response:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+    calls = []
+    def fake_post(*args, **kwargs):
+        calls.append((args, kwargs))
+        return Response()
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    handle = "opaque-release-handle-123456"
+    client.grab(handle)
+    assert calls[0][1]["follow_redirects"] is False
+    with pytest.raises(ValueError, match="already used"):
+        client.grab(handle)
+    assert len(calls) == 1
