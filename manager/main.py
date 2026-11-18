@@ -927,7 +927,12 @@ class ByparrManager(QMainWindow):
 
     def create_settings(self):
         page = QWidget()
-        layout = QVBoxLayout(page)
+        outer_layout = QVBoxLayout(page)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        content = QWidget()
+        layout = QVBoxLayout(content)
         layout.setContentsMargins(38, 32, 38, 30)
         layout.setSpacing(18)
         layout.addLayout(self.page_header(
@@ -1011,6 +1016,8 @@ class ByparrManager(QMainWindow):
         remote_layout.addWidget(self.remote_status_label)
         layout.addWidget(remote_panel)
         layout.addStretch()
+        scroll.setWidget(content)
+        outer_layout.addWidget(scroll, 1)
         return page
 
     def remote_status_snapshot(self):
