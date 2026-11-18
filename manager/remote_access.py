@@ -588,9 +588,10 @@ box-sizing:border-box;animation:spin .8s linear infinite;flex:none}.spinner[hidd
 <main><h1>BYPARR MANAGER</h1><p>Private remote dashboard</p><section class="panel">
 <h2>Engine</h2><p id="updated" aria-live="polite">Waiting for live status…</p><p id="engine" aria-live="polite">Loading…</p><p id="api"></p><p id="browser"></p>
 <p id="prowlarr"></p><p id="qbittorrent"></p>
+<p id="radarr"></p><p id="sonarr"></p><p id="lidarr"></p>
 <button id="start-engine">Start engine</button><button id="restart-engine">Restart</button>
 <button id="stop-engine">Stop</button><button id="browser-health">Browser Health</button>
-<button id="check-integrations">Check Prowlarr + qBittorrent</button></section>
+<button id="check-integrations">Check all integrations</button></section>
 <section class="panel"><h2>Prowlarr Search</h2>
 <p class="muted">Search your configured Prowlarr indexers and view results here on your iPad.</p>
 <form id="search-form"><label for="search-category">Search category</label>
@@ -616,6 +617,9 @@ document.querySelector('#api').textContent=d.api||'';
 document.querySelector('#browser').textContent='Browser health: '+(d.browser||'Not checked');
 document.querySelector('#prowlarr').textContent='Prowlarr: '+(d.prowlarr||'Not checked');
 document.querySelector('#qbittorrent').textContent='qBittorrent: '+(d.qbittorrent||'Not checked');
+document.querySelector('#radarr').textContent='Radarr: '+(d.radarr||'Not configured');
+document.querySelector('#sonarr').textContent='Sonarr: '+(d.sonarr||'Not configured');
+document.querySelector('#lidarr').textContent='Lidarr: '+(d.lidarr||'Not configured');
 document.querySelector('#logs').textContent=(Array.isArray(d.logs)?d.logs:[]).join(String.fromCharCode(10));
 renderSearchHistory(d.searches||[]);
 document.querySelector('#updated').textContent='Live status updated: '+new Date().toLocaleTimeString();
