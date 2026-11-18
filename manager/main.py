@@ -719,7 +719,7 @@ class ByparrManager(QMainWindow):
         self.browser_health_status.setStyleSheet("color: #e7bd70;")
         self.browser_health_button.setEnabled(False)
         self.browser_health_worker = BrowserHealthCheckWorker(
-            api_endpoint(self.api_host, self.api_port), self
+            api_endpoint(self.engine_controller.host, self.engine_controller.port), self
         )
         self.browser_health_worker.result.connect(
             self.handle_browser_health_result
@@ -1021,13 +1021,14 @@ class ByparrManager(QMainWindow):
         return page
 
     def refresh_tailscale_status(self):
-        """Detect the active Tailscale address and update the engine bind target."""
+        """Detect Tailscale and show both the active and next engine endpoint."""
         self.tailscale_ip = get_tailscale_ipv4()
         if not hasattr(self, "tailscale_status_label"):
             return
+
         if self.tailscale_ip:
             self.tailscale_status_label.setText(
-                f"Tailscale detected. This PC address: {self.tailscale_ip}"
+                f"Tailscale connected. This PC address: {self.tailscale_ip}"
             )
             self.tailscale_status_label.setStyleSheet("color: #48c78e;")
             self.tailscale_address_label.setText(
@@ -1035,7 +1036,7 @@ class ByparrManager(QMainWindow):
             )
         else:
             self.tailscale_status_label.setText(
-                "Tailscale was not detected as connected. Install/sign in to Tailscale on this PC, then refresh."
+                "Tailscale is not connected. Install/sign in on this PC, then refresh."
             )
             self.tailscale_status_label.setStyleSheet("color: #e7bd70;")
             self.tailscale_address_label.setText("Remote address: not available")
@@ -1045,42 +1046,57 @@ class ByparrManager(QMainWindow):
             if self.tailscale_enabled and self.tailscale_ip
             else "127.0.0.1" if self.tailscale_enabled else self.api_host
         )
-        restart_required = (
-            self.engine_controller.is_running
-            and self.engine_controller.host != desired_host
+        running = self.engine_controller.is_running
+        restart_required = running and (
+            self.engine_controller.host != desired_host
+            or self.engine_controller.port != self.api_port
         )
-        if not self.engine_controller.is_running:
-            self.engine_controller.host = desired_host
 
-        if self.tailscale_enabled and self.tailscale_ip:
-            suffix = " (restart required)" if restart_required else ""
-            self.endpoint_label.setText(
-                f"TAILSCALE API{suffix}     http://{self.tailscale_ip}:{self.api_port}"
+        if not running:
+            self.engine_controller.host = desired_host
+            self.engine_controller.port = self.api_port
+            endpoint = api_endpoint(desired_host, self.api_port)
+            mode = "TAILSCALE API" if self.tailscale_enabled else "LOCAL API"
+            self.endpoint_label.setText(f"{mode}     {endpoint}")
+        else:
+            active_endpoint = api_endpoint(
+                self.engine_controller.host, self.engine_controller.port
             )
-        elif not self.tailscale_enabled:
-            self.endpoint_label.setText(
-                f"LOCAL API     {api_endpoint(self.api_host, self.api_port)}"
-            )
+            if restart_required:
+                next_endpoint = api_endpoint(desired_host, self.api_port)
+                self.endpoint_label.setText(
+                    f"ACTIVE API (restart required) {active_endpoint}  |  "
+                    f"NEXT {next_endpoint}"
+                )
+            else:
+                mode = "TAILSCALE API" if self.tailscale_enabled else "LOCAL API"
+                self.endpoint_label.setText(f"{mode}     {active_endpoint}")
 
     def save_tailscale_settings(self):
-        """Persist the opt-in setting; apply the bind address on the next engine start."""
+        """Persist the opt-in setting and explain when an engine restart is needed."""
         self.tailscale_enabled = self.tailscale_enabled_checkbox.isChecked()
         self.settings.setValue("network/tailscale_enabled", self.tailscale_enabled)
         self.settings.sync()
         self.refresh_tailscale_status()
+
         if self.tailscale_enabled and not self.tailscale_ip:
             self.tailscale_status_label.setText(
-                "Setting saved, but Tailscale is not connected. Byparr will not start in remote mode until an address is detected."
+                "Setting saved, but Tailscale is not connected. Connect it before starting Byparr in remote mode."
+            )
+            self.tailscale_status_label.setStyleSheet("color: #e7bd70;")
+        elif self.engine_controller.is_running:
+            self.tailscale_status_label.setText(
+                "Setting saved. Restart the Byparr engine to apply the new network binding."
             )
             self.tailscale_status_label.setStyleSheet("color: #e7bd70;")
         elif self.tailscale_enabled:
             self.tailscale_status_label.setText(
-                "Tailscale remote access is enabled. Restart the engine to apply the new network binding."
+                "Tailscale remote access is enabled. Start the engine to apply it."
             )
             self.tailscale_status_label.setStyleSheet("color: #48c78e;")
         else:
             self.tailscale_status_label.setText(
-                "Tailscale remote access is disabled. Byparr will use your configured API host."
+                "Tailscale remote access is disabled. The next engine start will use your local API host."
             )
             self.tailscale_status_label.setStyleSheet("color: #98a5b8;")
 
@@ -1096,17 +1112,16 @@ class ByparrManager(QMainWindow):
 
         self.api_host = host
         self.api_port = port
-        self.engine_controller.port = port
-        if not self.tailscale_enabled:
-            self.engine_controller.host = host
+        if not self.engine_controller.is_running:
+            self.engine_controller.port = port
+            if not self.tailscale_enabled:
+                self.engine_controller.host = host
         self.settings.setValue("api/host", host)
         self.settings.setValue("api/port", port)
         self.settings.sync()
-        self.endpoint_label.setText(
-            f"LOCAL API     {api_endpoint(self.api_host, self.api_port)}"
-        )
+        self.refresh_tailscale_status()
         self.settings_status.setText(
-            "Settings saved. The next API check will use this address."
+            "Settings saved. Restart the engine if it is already running to apply the new host or port."
         )
         self.settings_status.setStyleSheet("color: #48c78e;")
 
