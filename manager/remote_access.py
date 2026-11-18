@@ -510,7 +510,7 @@ def redact_log_line(value):
         line,
     )
     line = re.sub(
-        r"(?i)([?&](?:apikey|api_key|token|password|passkey|auth|key)=)[^&#\s]+",
+        r"(?i)([?&](?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|password|passkey|auth|key|client_secret)=)[^&#\s]+",
         r"\1[REDACTED]",
         line,
     )
