@@ -767,7 +767,12 @@ class ByparrManager(QMainWindow):
 
     def create_integrations(self):
         page = QWidget()
-        layout = QVBoxLayout(page)
+        outer_layout = QVBoxLayout(page)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        content = QWidget()
+        layout = QVBoxLayout(content)
         layout.setContentsMargins(38, 32, 38, 30)
         layout.setSpacing(18)
         layout.addLayout(self.page_header(
@@ -810,6 +815,8 @@ class ByparrManager(QMainWindow):
             self.add_arr_integration_panel(layout, app_id)
 
         layout.addStretch()
+        scroll.setWidget(content)
+        outer_layout.addWidget(scroll, 1)
         return page
 
     def save_prowlarr_url(self):
