@@ -51,8 +51,10 @@ def validate_tailscale_binding(host: str, port: str | int) -> tuple[str, int]:
 
 def password_verifier(password: str, salt: bytes | None = None) -> tuple[str, str]:
     """Create a salted PBKDF2-HMAC-SHA256 verifier; never persist the password."""
-    if len(password) < 14:
+    if not isinstance(password, str) or len(password) < 14:
         raise ValueError("Choose a password with at least 14 characters.")
+    if len(password) > 1024:
+        raise ValueError("Remote dashboard passwords cannot exceed 1024 characters.")
     salt = salt or secrets.token_bytes(16)
     digest = hashlib.pbkdf2_hmac(
         "sha256", password.encode("utf-8"), salt, PASSWORD_ITERATIONS
