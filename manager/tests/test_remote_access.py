@@ -105,5 +105,11 @@ def test_remote_dashboard_contains_prowlarr_search_panel():
 
     assert "Prowlarr Search" in DASHBOARD
     assert "search-form" in DASHBOARD
+    assert 'id="search-category"' in DASHBOARD
+    assert 'value="movies"' in DASHBOARD
+    assert 'value="tv"' in DASHBOARD
+    assert 'value="audio"' in DASHBOARD
+    assert 'value="pc"' in DASHBOARD
+    assert "JSON.stringify({query,category})" in DASHBOARD
     assert "fetch('/api/search'" in DASHBOARD
     assert "renderSearchResults" in DASHBOARD
