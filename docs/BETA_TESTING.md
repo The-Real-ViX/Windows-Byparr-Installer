@@ -1,8 +1,8 @@
-# Community beta testing guide
+# Byparr Manager v0.4.0 beta testing guide
 
-Byparr Manager v0.4.0 is a beta. The maintainer has tested the current Windows build on one Windows 11 PC, including the dashboard checks, Prowlarr connection, qBittorrent connection, an indexer test through Byparr, and a real Prowlarr search. Community testing is needed across other PCs and configurations.
+This candidate is intended for controlled testing on Windows 11 x64. The maintainer has tested the original Build 256 on one Windows PC and an iPad over a private Tailscale network. The additional security-hardening changes require a fresh build and a repeat remote-dashboard smoke test.
 
-## Suggested test pass
+## Desktop test pass
 
 - [ ] Install on a supported Windows 11 x64 PC.
 - [ ] Launch the Manager and check Dashboard/API status.
@@ -14,7 +14,21 @@ Byparr Manager v0.4.0 is a beta. The maintainer has tested the current Windows b
 - [ ] Run an indexer test in Prowlarr using Byparr.
 - [ ] Run a normal search and confirm whether results return.
 - [ ] Close and reopen the Manager; check that settings persist.
-- [ ] If practical, test uninstall behaviour and confirm personal settings are retained unless you explicitly choose full cleanup.
+
+## Private Tailscale remote-dashboard test pass
+
+Only perform these checks on devices in the intended private tailnet. Do not expose the dashboard port to the public internet.
+
+- [ ] Enable remote access from the desktop Manager using the Windows PC's Tailscale IP.
+- [ ] Sign in from an iPad or other tailnet device.
+- [ ] Confirm the dashboard refreshes and displays engine/API/browser status.
+- [ ] Confirm Start, Stop, Restart and diagnostics controls work.
+- [ ] Search each category you use (Movies, TV, Audio/Music, Books, PC, Console).
+- [ ] Confirm search results show useful release details without exposing API keys or raw download/magnet URLs.
+- [ ] Select a result and confirm the prompt before sending it to Prowlarr's configured download client.
+- [ ] Confirm the release appears in qBittorrent and begins downloading.
+- [ ] Sign out and confirm the dashboard requires login again.
+- [ ] Disable remote access and confirm the remote endpoint stops responding.
 
 ## When reporting a problem
 
@@ -24,4 +38,4 @@ Use the Bug report form. Include the app version/build, Windows version, exact s
 
 ## Beta expectations
 
-This project is maintained by one person in spare time. Reports are welcome, but responses and fixes are not guaranteed to be immediate. Please be respectful and patient, and check existing reports before opening a duplicate.
+This project is maintained by one person in spare time. Reports are welcome, but responses and fixes are not guaranteed to be immediate. This is not a public-internet remote-access product and has not undergone an independent penetration test.
