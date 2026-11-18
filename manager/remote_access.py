@@ -412,7 +412,15 @@ class RemoteDashboardServer:
                     owner.audit(
                         f"User '{owner.username}' from {self.client_address[0]} requested '{action}'."
                     )
-                    owner.action_handler(action)
+                    try:
+                        owner.action_handler(action)
+                    except (RuntimeError, OSError, ValueError, TypeError) as error:
+                        owner.audit(
+                            f"Remote action '{action}' failed: {type(error).__name__}."
+                        )
+                        self._json(HTTPStatus.INTERNAL_SERVER_ERROR,
+                                   {"error": "The requested Manager action could not be started."})
+                        return
                     self._json(202, {"ok": True})
                     return
                 self._json(HTTPStatus.NOT_FOUND, {"error": "Not found"})
@@ -442,8 +450,24 @@ def redact_log_line(value):
     """Mask common credential fields before logs leave the Windows desktop."""
     line = str(value)
     line = re.sub(
-        r"(?i)(api[_-]?key|password|token|cookie|authorization)(\s*[:=]\s*)[^\s,;]+",
+        r"(?i)(authorization\s*[:=]\s*)(?:bearer\s+)?[^\s,;]+",
+        r"\1[REDACTED]",
+        line,
+    )
+    line = re.sub(
+        r"(?i)(api[_-]?key|password|token|cookie|secret|client_secret)(\s*[:=]\s*)"
+        r"(?:(?:bearer)\s+)?[\"']?[^\s,;\\\"']+",
         r"\1\2[REDACTED]",
+        line,
+    )
+    line = re.sub(
+        r"(?i)([?&](?:apikey|api_key|token|password|passkey|auth|key)=)[^&#\s]+",
+        r"\1[REDACTED]",
+        line,
+    )
+    line = re.sub(
+        r"(?i)(https?://[^:/\s]+:)[^@/\s]+(@)",
+        r"\1[REDACTED]\2",
         line,
     )
     return line[:2000]
