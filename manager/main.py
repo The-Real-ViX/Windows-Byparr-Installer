@@ -156,6 +156,10 @@ class ByparrManager(QMainWindow):
         self.remote_server = None
         self.remote_logs = []
         self.remote_engine_status = "Stopped"
+        self.remote_api_status = "Not checked"
+        self.remote_browser_status = "Not checked"
+        self.remote_prowlarr_status = "Not checked"
+        self.remote_qbittorrent_status = "Not checked"
         self.engine_controller.log_message.connect(self.append_log)
         self.prowlarr_url = self.settings.value(
             "integrations/prowlarr_url", "http://127.0.0.1:9696", type=str
@@ -686,18 +690,21 @@ class ByparrManager(QMainWindow):
         self.api_worker.start()
 
     def handle_api_check_result(self, success, message):
+        self.remote_api_status = message
         self.api_connection_status.setText(message)
         color = "#48c78e" if success else "#e57373"
         self.api_connection_status.setStyleSheet(f"color: {color};")
 
     def check_browser_health(self):
         if self.engine_controller._status != "Running":
+            self.remote_browser_status = "Start the engine first"
             self.browser_health_status.setText("Start the engine first")
             self.browser_health_status.setStyleSheet("color: #e7bd70;")
             return
         if hasattr(self, "browser_health_worker") and self.browser_health_worker.isRunning():
             return
 
+        self.remote_browser_status = "Checking browser..."
         self.browser_health_status.setText(
             "Checking browser... this can take up to 75 seconds"
         )
@@ -717,6 +724,7 @@ class ByparrManager(QMainWindow):
         self.browser_health_worker.start()
 
     def handle_browser_health_result(self, success, message):
+        self.remote_browser_status = message
         self.browser_health_status.setText(message)
         color = "#48c78e" if success else "#e57373"
         self.browser_health_status.setStyleSheet(f"color: {color};")
@@ -816,6 +824,8 @@ class ByparrManager(QMainWindow):
             api_key = None
 
         if not api_key:
+            self.remote_prowlarr_status = "API key not saved"
+            self.remote_qbittorrent_status = "Not checked"
             self.prowlarr_connection_status.setText("API key not saved")
             self.prowlarr_connection_status.setStyleSheet("color: #e7bd70;")
             self.qbittorrent_connection_status.setText("Not checked")
@@ -823,6 +833,8 @@ class ByparrManager(QMainWindow):
             self.change_page(1)
             return
 
+        self.remote_prowlarr_status = "Checking..."
+        self.remote_qbittorrent_status = "Checking..."
         self.prowlarr_connection_status.setText("Checking...")
         self.prowlarr_connection_status.setStyleSheet("color: #e7bd70;")
         self.qbittorrent_connection_status.setText("Checking...")
@@ -840,6 +852,8 @@ class ByparrManager(QMainWindow):
     def handle_prowlarr_check_result(
         self, prowlarr_ok, prowlarr_message, qbittorrent_ok, qbittorrent_message
     ):
+        self.remote_prowlarr_status = prowlarr_message
+        self.remote_qbittorrent_status = qbittorrent_message
         self.prowlarr_connection_status.setText(prowlarr_message)
         prowlarr_color = "#48c78e" if prowlarr_ok else "#e57373"
         self.prowlarr_connection_status.setStyleSheet(f"color: {prowlarr_color};")
@@ -1024,9 +1038,9 @@ class ByparrManager(QMainWindow):
         return {
             "engine": self.remote_engine_status,
             "api": f"Local Byparr API: {api_endpoint(self.api_host, self.api_port)}",
-            "browser": self.browser_health_status.text(),
-            "prowlarr": self.prowlarr_connection_status.text(),
-            "qbittorrent": self.qbittorrent_connection_status.text(),
+            "browser": self.remote_browser_status,
+            "prowlarr": self.remote_prowlarr_status,
+            "qbittorrent": self.remote_qbittorrent_status,
         }
 
     def handle_remote_action(self, action):
