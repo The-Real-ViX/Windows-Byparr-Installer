@@ -258,8 +258,17 @@ class RemoteDashboardServer:
                     if len(query) < 2 or len(query) > 120 or any(ord(c) < 32 for c in query):
                         self._json(400, {"error": "Search terms must be 2–120 characters."})
                         return
+                    category = payload.get("category", "all")
+                    category_labels = {
+                        "all": "All", "movies": "Movies", "tv": "TV Shows",
+                        "audio": "Audio / Music", "books": "Books",
+                        "pc": "PC", "console": "Console",
+                    }
+                    if category not in category_labels:
+                        self._json(400, {"error": "Choose a valid search category."})
+                        return
                     try:
-                        results = owner.search_handler(query)
+                        results = owner.search_handler(query, category)
                         if not isinstance(results, list):
                             raise TypeError("Unexpected search response")
                     except (RuntimeError, OSError, ValueError, TypeError):
@@ -270,6 +279,8 @@ class RemoteDashboardServer:
                         return
                     entry = {
                         "query": query,
+                        "category": category,
+                        "category_label": category_labels[category],
                         "count": len(results),
                         "results": results[:50],
                         "searched_at": time.strftime("%H:%M:%S"),
@@ -277,7 +288,7 @@ class RemoteDashboardServer:
                     owner._searches.append(entry)
                     owner._searches = owner._searches[-10:]
                     owner.audit(
-                        f"Prowlarr search completed for user '{owner.username}' from {self.client_address[0]} ({len(results)} results)."
+                        f"Prowlarr {category_labels[category]} search completed for user '{owner.username}' from {self.client_address[0]} ({len(results)} results)."
                     )
                     self._json(200, entry)
                     return
@@ -366,7 +377,8 @@ main{max-width:900px;margin:auto}h1{color:#8daaff}.panel{background:#1a2230;bord
 border-radius:12px;padding:20px;margin:16px 0}button{background:#4169e1;color:white;border:0;
 padding:11px 16px;border-radius:7px;margin:4px;cursor:pointer}pre{white-space:pre-wrap;
 overflow-wrap:anywhere;color:#b8c5d8;max-height:360px;overflow:auto}
-input{box-sizing:border-box;width:100%;padding:13px;border-radius:7px;border:1px solid #35445b;background:#131a25;color:#fff}
+input,select{box-sizing:border-box;width:100%;padding:13px;border-radius:7px;border:1px solid #35445b;background:#131a25;color:#fff;margin:6px 0 12px}
+label{display:block;color:#b8c5d8;margin-top:8px}
 .result{border-top:1px solid #2b3749;padding:12px 0}.result strong{display:block;overflow-wrap:anywhere}
 .muted{color:#9aa7ba;font-size:13px}#search-message{color:#9aa7ba;min-height:20px}
 button:disabled{opacity:.55;cursor:wait}.search-status{display:flex;align-items:center;gap:10px}
@@ -382,7 +394,14 @@ box-sizing:border-box;animation:spin .8s linear infinite;flex:none}.spinner[hidd
 <button onclick="act('check-integrations')">Check Prowlarr + qBittorrent</button></section>
 <section class="panel"><h2>Prowlarr Search</h2>
 <p class="muted">Search your configured Prowlarr indexers and view results here on your iPad.</p>
-<form id="search-form"><input id="search-query" name="query" minlength="2" maxlength="120" placeholder="Enter a title or search term" required>
+<form id="search-form"><label for="search-category">Search category</label>
+<select id="search-category" name="category">
+<option value="all">All</option><option value="movies">Movies</option>
+<option value="tv">TV Shows</option><option value="audio">Audio / Music</option>
+<option value="books">Books</option><option value="pc">PC</option>
+<option value="console">Console</option></select>
+<label for="search-query">Search term</label>
+<input id="search-query" name="query" minlength="2" maxlength="120" placeholder="Enter a title or search term" required>
 <button id="search-button" type="submit">Search Prowlarr</button></form>
 <div class="search-status"><span id="search-spinner" class="spinner" hidden aria-hidden="true"></span>
 <p id="search-message" role="status" aria-live="polite" aria-atomic="true">Search results will appear here.</p></div>
@@ -413,14 +432,15 @@ const parts=[item.indexer||'Unknown indexer',item.size_label||'Size unknown',
 meta.textContent=parts.filter(Boolean).join(' · ');card.appendChild(meta);target.appendChild(card);}}
 function renderSearchHistory(items){const target=document.querySelector('#search-history');target.replaceChildren();
 if(!Array.isArray(items)||!items.length){target.textContent='No searches yet.';return;}
-for(const item of [...items].reverse()){const b=document.createElement('button');b.type='button';b.textContent=item.query+' ('+item.count+')';
-b.addEventListener('click',()=>{document.querySelector('#search-query').value=item.query;renderSearchResults(item);document.querySelector('#search-message').textContent='Previous results · '+item.searched_at;});target.appendChild(b);}}
+for(const item of [...items].reverse()){const b=document.createElement('button');b.type='button';b.textContent=(item.category_label||'All')+': '+item.query+' ('+item.count+')';
+b.addEventListener('click',()=>{document.querySelector('#search-query').value=item.query;document.querySelector('#search-category').value=item.category||'all';renderSearchResults(item);document.querySelector('#search-message').textContent='Previous results · '+item.searched_at;});target.appendChild(b);}}
 let searchInFlight=false;let searchTimer=null;let searchStartedAt=0;
 function elapsedSearchSeconds(){return Math.max(0,Math.floor((Date.now()-searchStartedAt)/1000));}
 function setSearchMessage(text){document.querySelector('#search-message').textContent=text;}
 document.querySelector('#search-form').addEventListener('submit',async event=>{event.preventDefault();
 if(searchInFlight)return;
 const query=document.querySelector('#search-query').value.trim();
+const category=document.querySelector('#search-category').value;
 if(query.length<2){setSearchMessage('Enter at least 2 characters.');return;}
 if(!csrf){setSearchMessage('Connecting to the dashboard… please try again in a moment.');return;}
 searchInFlight=true;searchStartedAt=Date.now();
@@ -431,9 +451,9 @@ setSearchMessage('Searching Prowlarr… 0s elapsed. Some indexers take longer wh
 searchTimer=setInterval(()=>{const seconds=elapsedSearchSeconds();
 setSearchMessage(seconds<15?'Searching Prowlarr… '+seconds+'s elapsed.':'Still searching… '+seconds+'s elapsed. Some indexers take longer while Byparr handles challenges. Keep this page open.');},1000);
 try{const r=await fetch('/api/search',{method:'POST',credentials:'same-origin',
-headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({query})});
+headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({query,category})});
 const data=await r.json();if(!r.ok)throw new Error(data.error||('HTTP '+r.status));
-renderSearchResults(data);setSearchMessage('Found '+data.count+' results for “'+data.query+'” in '+elapsedSearchSeconds()+'s.');
+renderSearchResults(data);setSearchMessage('Found '+data.count+' '+(data.category_label||'All')+' results for “'+data.query+'” in '+elapsedSearchSeconds()+'s.');
 }catch(error){setSearchMessage('Search failed after '+elapsedSearchSeconds()+'s: '+error.message+' You can try again.');}
 finally{if(searchTimer!==null){clearInterval(searchTimer);searchTimer=null;}
 searchInFlight=false;button.disabled=false;button.textContent='Search Prowlarr';spinner.hidden=true;
