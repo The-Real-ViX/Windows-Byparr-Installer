@@ -36,12 +36,16 @@ class ProwlarrSearchClient:
                 f"{self.base_url}/api/v1/search",
                 params={"query": query, "type": "search", "limit": 50},
                 headers={"X-Api-Key": self.api_key},
-                timeout=90.0,
+                timeout=180.0,
             )
             if response.status_code in (401, 403):
                 raise RuntimeError("Prowlarr rejected its API key.")
             response.raise_for_status()
             payload = response.json()
+        except httpx.TimeoutException as error:
+            raise RuntimeError(
+                "Prowlarr search timed out after 180 seconds. Check the indexers and try again."
+            ) from error
         except httpx.HTTPError as error:
             raise RuntimeError("Could not retrieve Prowlarr search results.") from error
         if not isinstance(payload, list):
