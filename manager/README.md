@@ -13,6 +13,7 @@ Byparr Manager is an independent community-built Windows desktop control centre 
 - Check Prowlarr and qBittorrent connectivity.
 - Run Prowlarr integration diagnostics.
 - Store integration credentials using Windows Credential Manager.
+- Optional password-protected remote dashboard over your private Tailscale network.
 
 ## First run
 
@@ -23,6 +24,23 @@ Byparr Manager is an independent community-built Windows desktop control centre 
 5. If something fails, open Logs and export the relevant diagnostic output.
 
 The Manager launches the engine locally by default. Keep the API bound to localhost unless you intentionally need trusted network access and understand the exposure.
+
+
+## Optional remote dashboard (Tailscale)
+
+Remote access is **off by default**. To use it, open **Settings → Tailscale remote dashboard** on the Windows PC:
+
+1. Enter that PC's Tailscale IP address (normally in the `100.x.x.x` range).
+2. Leave the suggested port `8765`, unless another app already uses it.
+3. Choose a dedicated dashboard username and a strong password of at least 14 characters.
+4. Select **Enable remote access**. The dashboard is available only while Byparr Manager remains open and remote access is enabled.
+5. On another device connected to the same tailnet, browse to `http://TAILSCALE-IP:8765` and sign in.
+
+The remote service binds to the specified Tailscale address only. It does not bind to every network interface, change the Byparr engine's localhost binding, configure router port forwarding, or use Tailscale Funnel. Tailscale encrypts traffic between tailnet devices; keep your tailnet access controls restricted to devices and people you trust. The dashboard also has its own login, salted password verifier, expiring sessions, CSRF checks, and login throttling. It exposes only the Manager dashboard actions, not a general Windows command prompt or file browser.
+
+The password is not saved in plain text. Only a salted PBKDF2 verifier is stored in local application settings. Remote access stops when the Manager closes; enable it again manually when needed. Use a unique password, not your Windows, Prowlarr, or qBittorrent password.
+
+This initial remote dashboard provides engine status and start/stop/restart controls plus recent redacted logs. It is an early feature and should be tested on your own trusted tailnet before relying on it. The Byparr engine API remains bound to localhost.
 
 ## Reporting problems
 
