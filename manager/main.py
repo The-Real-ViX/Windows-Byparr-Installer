@@ -1037,7 +1037,7 @@ class ByparrManager(QMainWindow):
     def remote_status_snapshot(self):
         return {
             "engine": self.remote_engine_status,
-            "api": f"Local Byparr API: {api_endpoint(self.api_host, self.api_port)}",
+            "api": f"Local Byparr API: {api_endpoint(self.api_host, self.api_port)} — {self.remote_api_status}",
             "browser": self.remote_browser_status,
             "prowlarr": self.remote_prowlarr_status,
             "qbittorrent": self.remote_qbittorrent_status,
