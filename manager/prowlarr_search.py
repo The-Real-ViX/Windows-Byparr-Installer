@@ -1,9 +1,12 @@
 """Read-only search access to a configured Prowlarr instance."""
 
 import secrets
+import time
 
 import httpx
 
+
+RELEASE_HANDLE_SECONDS = 30 * 60
 
 SEARCH_CATEGORIES = {
     "all": {"label": "All", "type": "search", "category": None},
@@ -84,7 +87,15 @@ class ProwlarrSearchClient:
             grab_id = None
             if item.get("guid") and isinstance(item.get("indexerId"), int):
                 grab_id = secrets.token_urlsafe(24)
-                self._releases[grab_id] = dict(item)
+                now = time.monotonic()
+                self._releases = {
+                    key: value for key, value in self._releases.items()
+                    if value["expires"] > now
+                }
+                self._releases[grab_id] = {
+                    "release": dict(item),
+                    "expires": now + RELEASE_HANDLE_SECONDS,
+                }
                 if len(self._releases) > 500:
                     self._releases.pop(next(iter(self._releases)))
             result = {
@@ -111,9 +122,11 @@ class ProwlarrSearchClient:
 
     def grab(self, grab_id: str) -> None:
         """Ask Prowlarr to send a previously returned release to its configured download client."""
-        release = self._releases.get(grab_id)
-        if not release:
+        stored = self._releases.get(grab_id)
+        if not stored or stored["expires"] <= time.monotonic():
+            self._releases.pop(grab_id, None)
             raise ValueError("This search result has expired. Run the search again.")
+        release = stored["release"]
         try:
             response = httpx.post(
                 f"{self.base_url}/api/v1/search",
