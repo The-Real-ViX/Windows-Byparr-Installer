@@ -24,7 +24,9 @@ def test_search_uses_api_key_header_and_returns_safe_release_fields(monkeypatch)
     monkeypatch.setattr(httpx, "get", fake_get)
     result = ProwlarrSearchClient("http://127.0.0.1:9696", "secret-key").search("example")
     assert captured["headers"] == {"X-Api-Key": "secret-key"}
-    assert captured["params"] == {"query": "example", "type": "search", "limit": 50}
+    assert captured["params"] == [
+        ("query", "example"), ("type", "search"), ("limit", 50)
+    ]
     assert captured["timeout"] == 180.0
     assert result == [{
         "title": "Example.Release.1080p",
@@ -37,6 +39,35 @@ def test_search_uses_api_key_header_and_returns_safe_release_fields(monkeypatch)
     }]
     assert "downloadUrl" not in result[0]
     assert "secret-key" not in str(result)
+
+
+@pytest.mark.parametrize(
+    ("category", "expected_type", "expected_category"),
+    [
+        ("movies", "movie", 2000),
+        ("tv", "tvsearch", 5000),
+        ("audio", "music", 3000),
+        ("books", "book", 7000),
+        ("pc", "search", 4000),
+        ("console", "search", 1000),
+    ],
+)
+def test_search_maps_categories_to_prowlarr_modes(monkeypatch, category, expected_type, expected_category):
+    captured = {}
+
+    def fake_get(url, **kwargs):
+        captured.update(kwargs)
+        return httpx.Response(200, json=[], request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    ProwlarrSearchClient("http://127.0.0.1:9696", "key").search("example", category)
+    assert ("type", expected_type) in captured["params"]
+    assert ("categories", expected_category) in captured["params"]
+
+
+def test_search_rejects_unknown_category():
+    with pytest.raises(ValueError, match="category"):
+        ProwlarrSearchClient("http://127.0.0.1:9696", "key").search("example", "unknown")
 
 
 def test_search_rejects_non_list_response(monkeypatch):
