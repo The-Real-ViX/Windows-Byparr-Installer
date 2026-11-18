@@ -2,6 +2,7 @@
 
 import secrets
 import time
+import threading
 
 import httpx
 
@@ -26,6 +27,7 @@ class ProwlarrSearchClient:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self._releases = {}
+        self._releases_lock = threading.Lock()
 
     @staticmethod
     def _size_label(value):
@@ -88,16 +90,17 @@ class ProwlarrSearchClient:
             if item.get("guid") and isinstance(item.get("indexerId"), int):
                 grab_id = secrets.token_urlsafe(24)
                 now = time.monotonic()
-                self._releases = {
-                    key: value for key, value in self._releases.items()
-                    if value["expires"] > now
-                }
-                self._releases[grab_id] = {
-                    "release": dict(item),
-                    "expires": now + RELEASE_HANDLE_SECONDS,
-                }
-                if len(self._releases) > 500:
-                    self._releases.pop(next(iter(self._releases)))
+                with self._releases_lock:
+                    self._releases = {
+                        key: value for key, value in self._releases.items()
+                        if value["expires"] > now
+                    }
+                    self._releases[grab_id] = {
+                        "release": dict(item),
+                        "expires": now + RELEASE_HANDLE_SECONDS,
+                    }
+                    if len(self._releases) > 500:
+                        self._releases.pop(next(iter(self._releases)))
             result = {
                 "title": title[:500],
                 "indexer": str(
@@ -122,11 +125,12 @@ class ProwlarrSearchClient:
 
     def grab(self, grab_id: str) -> None:
         """Ask Prowlarr to send a previously returned release to its configured download client."""
-        stored = self._releases.get(grab_id)
-        if not stored or stored["expires"] <= time.monotonic():
-            self._releases.pop(grab_id, None)
-            raise ValueError("This search result has expired. Run the search again.")
-        release = stored["release"]
+        with self._releases_lock:
+            stored = self._releases.get(grab_id)
+            if not stored or stored["expires"] <= time.monotonic():
+                self._releases.pop(grab_id, None)
+                raise ValueError("This search result has expired. Run the search again.")
+            release = stored["release"]
         try:
             response = httpx.post(
                 f"{self.base_url}/api/v1/search",
