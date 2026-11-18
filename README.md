@@ -37,6 +37,7 @@ Byparr Manager can optionally bind the Byparr API to this Windows PC's active Ta
 3. In Byparr Manager, open **Settings**, enable **Remote access over Tailscale**, refresh the status, and save the setting.
 4. Start or restart the Byparr engine. The Manager displays the remote address, for example `http://100.x.y.z:8191`.
 5. Configure the Tailscale access policy so only the devices/users you trust can reach TCP port 8191 on this PC.
+6. If Prowlarr or another *arr app runs on this same Windows PC, point its Byparr connection at the displayed Tailscale IP while Tailscale-only binding is enabled, rather than using localhost.
 
 **Security:** Tailscale encrypts traffic between tailnet devices, but the Byparr API itself does not provide a Manager username/password. Anyone permitted by your tailnet policy to reach this port may be able to call the API. Do not expose port 8191 through router port forwarding or a public reverse proxy. The feature is opt-in; local-only binding remains the default. The Windows Manager must remain running because it currently supervises the engine process.
 
