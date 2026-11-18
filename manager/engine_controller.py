@@ -6,7 +6,13 @@ import sys
 from pathlib import Path
 
 import httpx
-from PySide6.QtCore import (
+def is_routine_api_probe_log_line(line: str) -> bool:
+    """Identify successful health-poll access lines that add no diagnostic value."""
+    text = str(line).rstrip()
+    return '"GET /openapi.json HTTP/' in text and text.endswith("200 OK")
+
+
+from PySide6.QtCore (
     QObject,
     QProcess,
     QProcessEnvironment,
