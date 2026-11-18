@@ -128,3 +128,41 @@ def test_remote_grab_handler_is_optional_and_callable():
     assert server.grab_handler is not None
     server.grab_handler("opaque-release-id")
     assert grabbed == ["opaque-release-id"]
+
+
+
+def test_remote_request_host_and_origin_validation():
+    from remote_access import validate_request_host, validate_request_origin
+
+    assert validate_request_host("100.101.20.30:8765", "100.101.20.30", 8765)
+    assert not validate_request_host("evil.example:8765", "100.101.20.30", 8765)
+    assert validate_request_host("[fd7a:115c:a1e0::1234]:8765", "fd7a:115c:a1e0::1234", 8765)
+    assert validate_request_origin(
+        "http://100.101.20.30:8765", "100.101.20.30:8765"
+    )
+    assert not validate_request_origin(
+        "https://100.101.20.30:8765", "100.101.20.30:8765"
+    )
+    assert not validate_request_origin(
+        "http://evil.example:8765", "100.101.20.30:8765"
+    )
+    assert not validate_request_origin(
+        "null", "100.101.20.30:8765"
+    )
+
+
+def test_password_verification_rejects_oversized_input():
+    from remote_access import verify_password
+
+    salt, verifier = password_verifier("a-long-test-password-123!")
+    assert not verify_password("x" * 1025, salt, verifier)
+
+
+def test_remote_username_rejects_log_injection():
+    from remote_access import RemoteDashboardServer
+
+    with pytest.raises(ValueError, match="safe characters"):
+        RemoteDashboardServer(
+            "100.101.20.30", 8765, "bad\\nuser", "00" * 16, "11" * 32,
+            lambda: {}, lambda _action: None,
+        )
