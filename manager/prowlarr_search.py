@@ -66,6 +66,7 @@ class ProwlarrSearchClient:
                 params=params,
                 headers={"X-Api-Key": self.api_key},
                 timeout=180.0,
+                follow_redirects=False,
             )
             if response.status_code in (401, 403):
                 raise RuntimeError("Prowlarr rejected its API key.")
@@ -126,10 +127,11 @@ class ProwlarrSearchClient:
     def grab(self, grab_id: str) -> None:
         """Ask Prowlarr to send a previously returned release to its configured download client."""
         with self._releases_lock:
-            stored = self._releases.get(grab_id)
+            # Consume the opaque handle before contacting Prowlarr. This prevents
+            # concurrent or repeated requests from grabbing the same release twice.
+            stored = self._releases.pop(grab_id, None)
             if not stored or stored["expires"] <= time.monotonic():
-                self._releases.pop(grab_id, None)
-                raise ValueError("This search result has expired. Run the search again.")
+                raise ValueError("This search result has expired or was already used. Run the search again.")
             release = stored["release"]
         try:
             response = httpx.post(
@@ -137,6 +139,7 @@ class ProwlarrSearchClient:
                 json=release,
                 headers={"X-Api-Key": self.api_key},
                 timeout=30.0,
+                follow_redirects=False,
             )
             if response.status_code in (401, 403):
                 raise RuntimeError("Prowlarr rejected its API key.")
