@@ -2,7 +2,7 @@
 
 **A community-built Windows 11 desktop manager and installer for the [Byparr](https://github.com/ThePhaseless/Byparr) engine.**
 
-> **Status: public beta preparation — v0.4.0.** This is an independent community project, not an official Byparr release and not affiliated with or endorsed by ThePhaseless. The application has been tested by its maintainer on one Windows 11 computer. Other hardware, Windows configurations and indexer setups still need community testing.
+> **Status: public beta preparation — v0.5.0.** This is an independent community project, not an official Byparr release and not affiliated with or endorsed by ThePhaseless. The application has been tested by its maintainer on one Windows 11 computer. Other hardware, Windows configurations and indexer setups still need community testing.
 
 ## What it does
 
