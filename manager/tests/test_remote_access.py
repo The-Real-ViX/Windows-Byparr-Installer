@@ -83,3 +83,9 @@ def test_remote_audit_failure_does_not_break_dashboard():
         lambda: {}, lambda _action: None, audit_logger=broken_logger,
     )
     server.audit("Login successful")
+
+
+def test_dashboard_script_uses_valid_newline_expression():
+    from remote_access import DASHBOARD
+
+    assert ".join(String.fromCharCode(10))" in DASHBOARD
