@@ -1040,6 +1040,8 @@ class ByparrManager(QMainWindow):
             self.tailscale_status_label.setStyleSheet("color: #e7bd70;")
             self.tailscale_address_label.setText("Remote address: not available")
 
+        if self.tailscale_enabled and not self.tailscale_ip:
+            self.engine_controller.host = "127.0.0.1"
         if self.tailscale_enabled and self.tailscale_ip:
             self.engine_controller.host = self.tailscale_ip
             self.endpoint_label.setText(
