@@ -1,5 +1,7 @@
 """Read-only search access to a configured Prowlarr instance."""
 
+import secrets
+
 import httpx
 
 
@@ -20,6 +22,7 @@ class ProwlarrSearchClient:
     def __init__(self, base_url: str, api_key: str):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
+        self._releases = {}
 
     @staticmethod
     def _size_label(value):
@@ -78,7 +81,12 @@ class ProwlarrSearchClient:
             title = str(item.get("title") or "").strip()
             if not title:
                 continue
+            grab_id = secrets.token_urlsafe(24)
+            self._releases[grab_id] = dict(item)
+            if len(self._releases) > 500:
+                self._releases.pop(next(iter(self._releases)))
             results.append({
+                "grab_id": grab_id,
                 "title": title[:500],
                 "indexer": str(
                     item.get("indexer") or item.get("indexerName") or "Unknown indexer"
@@ -96,3 +104,23 @@ class ProwlarrSearchClient:
                 "publish_date": str(item.get("publishDate") or "")[:40],
             })
         return results
+
+    def grab(self, grab_id: str) -> None:
+        """Ask Prowlarr to send a previously returned release to its configured download client."""
+        release = self._releases.get(grab_id)
+        if not release:
+            raise ValueError("This search result has expired. Run the search again.")
+        try:
+            response = httpx.post(
+                f"{self.base_url}/api/v1/search",
+                json=release,
+                headers={"X-Api-Key": self.api_key},
+                timeout=30.0,
+            )
+            if response.status_code in (401, 403):
+                raise RuntimeError("Prowlarr rejected its API key.")
+            response.raise_for_status()
+        except httpx.TimeoutException as error:
+            raise RuntimeError("Prowlarr did not confirm the grab before timing out.") from error
+        except httpx.HTTPError as error:
+            raise RuntimeError("Prowlarr could not send this release to its download client.") from error
