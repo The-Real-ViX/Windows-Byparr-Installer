@@ -76,7 +76,7 @@ class RemoteDashboardServer:
     """Small authenticated HTTP dashboard, restricted to a configured Tailscale IP."""
 
     def __init__(self, host, port, username, salt, verifier, status_provider,
-                 action_handler, log_provider=None, audit_logger=None, search_handler=None):
+                 action_handler, log_provider=None, audit_logger=None, search_handler=None, grab_handler=None):
         self.host, self.port = validate_tailscale_binding(host, port)
         self.username = username
         self.salt = salt
@@ -86,6 +86,7 @@ class RemoteDashboardServer:
         self.log_provider = log_provider or (lambda: [])
         self.audit_logger = audit_logger or (lambda _message: None)
         self.search_handler = search_handler or (lambda _query, _category: [])
+        self.grab_handler = grab_handler
         self._searches = []
         self._sessions = {}
         self._failures = {}
@@ -292,6 +293,27 @@ class RemoteDashboardServer:
                     )
                     self._json(200, entry)
                     return
+                if path == "/api/grab":
+                    grab_id = payload.get("grab_id") if isinstance(payload, dict) else None
+                    if not isinstance(grab_id, str) or not 20 <= len(grab_id) <= 100:
+                        self._json(400, {"error": "Choose a valid search result."})
+                        return
+                    if owner.grab_handler is None:
+                        self._json(503, {"error": "Release grabbing is not configured."})
+                        return
+                    try:
+                        owner.grab_handler(grab_id)
+                    except (RuntimeError, OSError, ValueError, TypeError):
+                        owner.audit(
+                            f"Release grab failed for user '{owner.username}' from {self.client_address[0]}."
+                        )
+                        self._json(502, {"error": "Prowlarr could not send this release to its configured download client."})
+                        return
+                    owner.audit(
+                        f"Release grab accepted for user '{owner.username}' from {self.client_address[0]}."
+                    )
+                    self._json(200, {"ok": True, "message": "Prowlarr accepted the release grab."})
+                    return
                 if path == "/logout":
                     with owner._lock:
                         owner._sessions.pop(token, None)
@@ -429,11 +451,26 @@ const title=document.createElement('strong');title.textContent=item.title||'Unti
 const meta=document.createElement('div');meta.className='muted';
 const parts=[item.indexer||'Unknown indexer',item.size_label||'Size unknown',
 'Seeds: '+(item.seeders??'—'),'Peers: '+(item.leechers??'—'),item.protocol||''];
-meta.textContent=parts.filter(Boolean).join(' · ');card.appendChild(meta);target.appendChild(card);}}
+meta.textContent=parts.filter(Boolean).join(' · ');card.appendChild(meta);
+if(item.grab_id){const grab=document.createElement('button');grab.type='button';grab.textContent='Send to qBittorrent';
+grab.addEventListener('click',()=>grabRelease(item.grab_id,item.title,grab));card.appendChild(grab);}
+target.appendChild(card);}}
 function renderSearchHistory(items){const target=document.querySelector('#search-history');target.replaceChildren();
 if(!Array.isArray(items)||!items.length){target.textContent='No searches yet.';return;}
 for(const item of [...items].reverse()){const b=document.createElement('button');b.type='button';b.textContent=(item.category_label||'All')+': '+item.query+' ('+item.count+')';
 b.addEventListener('click',()=>{document.querySelector('#search-query').value=item.query;document.querySelector('#search-category').value=item.category||'all';renderSearchResults(item);document.querySelector('#search-message').textContent='Previous results · '+item.searched_at;});target.appendChild(b);}}
+let grabInFlight=false;
+async function grabRelease(grabId,title,button){if(grabInFlight)return;
+if(!window.confirm('Send this release to qBittorrent via Prowlarr?\\n\\n'+title))return;
+if(!csrf){setSearchMessage('Dashboard session is not ready. Refresh and try again.');return;}
+grabInFlight=true;const oldText=button.textContent;button.disabled=true;button.textContent='Sending…';
+setSearchMessage('Sending selected release to Prowlarr…');
+try{const r=await fetch('/api/grab',{method:'POST',credentials:'same-origin',
+headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({grab_id:grabId})});
+const data=await r.json();if(!r.ok)throw new Error(data.error||('HTTP '+r.status));
+button.textContent='Sent to qBittorrent';setSearchMessage(data.message||'Prowlarr accepted the release grab.');}
+catch(error){button.disabled=false;button.textContent=oldText;setSearchMessage('Could not send release: '+error.message);}
+finally{grabInFlight=false;}}
 let searchInFlight=false;let searchTimer=null;let searchStartedAt=0;
 function elapsedSearchSeconds(){return Math.max(0,Math.floor((Date.now()-searchStartedAt)/1000));}
 function setSearchMessage(text){document.querySelector('#search-message').textContent=text;}
