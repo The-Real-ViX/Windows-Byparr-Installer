@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 import httpx
-from PySide6.QtCore import QSettings, QStandardPaths, Qt, QThread, Signal
+from PySide6.QtCore import QObject, QSettings, QStandardPaths, Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -31,6 +31,7 @@ from build_info import APP_VERSION, BUILD_NUMBER
 from engine_controller import EngineController
 from prowlarr_check import ProwlarrIntegrationCheckWorker
 from secret_store import SecretStorageError, SecretStore
+from remote_access import RemoteDashboardServer, password_verifier, validate_tailscale_binding
 
 
 DEFAULT_API_HOST = "127.0.0.1"
@@ -135,6 +136,10 @@ class BrowserHealthCheckWorker(QThread):
             self.result.emit(False, "Browser health check could not be completed.")
 
 
+class RemoteActionBridge(QObject):
+    requested = Signal(str)
+
+
 class ByparrManager(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -146,6 +151,11 @@ class ByparrManager(QMainWindow):
         self.secret_store = SecretStore()
         self.engine_controller = EngineController(self)
         self.engine_controller.status_changed.connect(self.handle_engine_status)
+        self.remote_action_bridge = RemoteActionBridge(self)
+        self.remote_action_bridge.requested.connect(self.handle_remote_action)
+        self.remote_server = None
+        self.remote_logs = []
+        self.remote_engine_status = "Stopped"
         self.engine_controller.log_message.connect(self.append_log)
         self.prowlarr_url = self.settings.value(
             "integrations/prowlarr_url", "http://127.0.0.1:9696", type=str
@@ -610,6 +620,7 @@ class ByparrManager(QMainWindow):
         self.engine_controller.restart()
 
     def handle_engine_status(self, status):
+        self.remote_engine_status = status
         self.engine_status.setText(status)
         if hasattr(self, "engine_metric_value"):
             self.engine_metric_value.setText(status)
@@ -638,6 +649,8 @@ class ByparrManager(QMainWindow):
             self.browser_health_button.setEnabled(status == "Running")
 
     def append_log(self, message):
+        self.remote_logs.append(str(message))
+        self.remote_logs = self.remote_logs[-100:]
         if hasattr(self, "log_view"):
             self.log_view.append(message)
 
@@ -653,6 +666,7 @@ class ByparrManager(QMainWindow):
             self.close()
 
     def closeEvent(self, event):
+        self.stop_remote_access()
         self.engine_controller.shutdown()
         event.accept()
 
@@ -957,8 +971,95 @@ class ByparrManager(QMainWindow):
         panel_layout.addWidget(self.settings_status)
 
         layout.addWidget(panel)
+
+        remote_panel, remote_layout = self.make_panel(
+            "Tailscale remote dashboard",
+            "Optional remote control from your own Tailscale devices. The service binds "
+            "only to the Tailscale IP entered below; it does not open a public internet port. "
+            "Remote access is stopped whenever you close Byparr Manager."
+        )
+        remote_layout.addWidget(QLabel("This Windows PC's Tailscale IP address"))
+        self.remote_host_input = QLineEdit(self.settings.value("remote/host", "", type=str))
+        self.remote_host_input.setPlaceholderText("100.x.x.x")
+        remote_layout.addWidget(self.remote_host_input)
+        remote_layout.addWidget(QLabel("Remote dashboard port"))
+        self.remote_port_input = QLineEdit(str(self.settings.value("remote/port", 8765, type=int)))
+        remote_layout.addWidget(self.remote_port_input)
+        remote_layout.addWidget(QLabel("Remote login username"))
+        self.remote_username_input = QLineEdit(self.settings.value("remote/username", "", type=str))
+        self.remote_username_input.setPlaceholderText("Choose a dashboard username")
+        remote_layout.addWidget(self.remote_username_input)
+        remote_layout.addWidget(QLabel("Remote login password"))
+        self.remote_password_input = QLineEdit()
+        self.remote_password_input.setEchoMode(QLineEdit.Password)
+        self.remote_password_input.setPlaceholderText("Set a new password (14+ characters); leave blank to reuse saved login")
+        remote_layout.addWidget(self.remote_password_input)
+        remote_actions = QHBoxLayout()
+        self.remote_start_button = QPushButton("Enable remote access")
+        self.remote_start_button.setObjectName("primary")
+        self.remote_start_button.clicked.connect(self.start_remote_access)
+        remote_actions.addWidget(self.remote_start_button)
+        self.remote_stop_button = QPushButton("Disable remote access")
+        self.remote_stop_button.clicked.connect(self.stop_remote_access)
+        self.remote_stop_button.setEnabled(False)
+        remote_actions.addWidget(self.remote_stop_button)
+        remote_actions.addStretch()
+        remote_layout.addLayout(remote_actions)
+        self.remote_status_label = QLabel("Remote access is disabled.")
+        self.remote_status_label.setObjectName("muted")
+        self.remote_status_label.setWordWrap(True)
+        remote_layout.addWidget(self.remote_status_label)
+        layout.addWidget(remote_panel)
         layout.addStretch()
         return page
+
+    def remote_status_snapshot(self):
+        return {"engine": self.remote_engine_status, "api": f"Local Byparr API: {api_endpoint(self.api_host, self.api_port)}"}
+
+    def handle_remote_action(self, action):
+        if action == "start": self.start_engine()
+        elif action == "stop": self.stop_engine()
+        elif action == "restart": self.restart_engine()
+
+    def start_remote_access(self):
+        if self.remote_server and self.remote_server.running: return
+        try:
+            host, port = validate_tailscale_binding(self.remote_host_input.text(), self.remote_port_input.text())
+            username = self.remote_username_input.text().strip()
+            if not username or len(username) > 64: raise ValueError("Enter a remote login username (maximum 64 characters).")
+            salt = self.settings.value("remote/password_salt", "", type=str)
+            verifier = self.settings.value("remote/password_verifier", "", type=str)
+            new_password = self.remote_password_input.text()
+            if new_password: salt, verifier = password_verifier(new_password)
+            elif not salt or not verifier: raise ValueError("Set a new remote login password with at least 14 characters.")
+            self.settings.setValue("remote/host", host)
+            self.settings.setValue("remote/port", port)
+            self.settings.setValue("remote/username", username)
+            self.settings.setValue("remote/password_salt", salt)
+            self.settings.setValue("remote/password_verifier", verifier)
+            self.settings.sync()
+            self.remote_server = RemoteDashboardServer(host, port, username, salt, verifier, self.remote_status_snapshot, self.remote_action_bridge.requested.emit, lambda: self.remote_logs[-100:])
+            self.remote_server.start()
+        except (ValueError, OSError) as error:
+            self.remote_status_label.setText(f"Could not enable remote access: {error}")
+            self.remote_status_label.setStyleSheet("color: #e57373;")
+            return
+        self.remote_password_input.clear()
+        self.remote_start_button.setEnabled(False)
+        self.remote_stop_button.setEnabled(True)
+        self.remote_status_label.setText(f"Remote dashboard is active on http://{host}:{port}. Open this address on your Mac while connected to Tailscale.")
+        self.remote_status_label.setStyleSheet("color: #48c78e;")
+        self.append_log(f"Remote dashboard enabled on Tailscale address {host}:{port}.")
+
+    def stop_remote_access(self):
+        if self.remote_server:
+            self.remote_server.stop()
+            self.remote_server = None
+        if hasattr(self, "remote_start_button"):
+            self.remote_start_button.setEnabled(True)
+            self.remote_stop_button.setEnabled(False)
+            self.remote_status_label.setText("Remote access is disabled.")
+            self.remote_status_label.setStyleSheet("color: #98a5b8;")
 
     def save_api_settings(self):
         try:
