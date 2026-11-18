@@ -113,3 +113,18 @@ def test_remote_dashboard_contains_prowlarr_search_panel():
     assert "JSON.stringify({query,category})" in DASHBOARD
     assert "fetch('/api/search'" in DASHBOARD
     assert "renderSearchResults" in DASHBOARD
+    assert "Send to qBittorrent" in DASHBOARD
+    assert "window.confirm" in DASHBOARD
+
+
+def test_remote_grab_handler_is_optional_and_callable():
+    from remote_access import RemoteDashboardServer
+
+    grabbed = []
+    server = RemoteDashboardServer(
+        "100.101.20.30", 8765, "test-user", "00" * 16, "11" * 32,
+        lambda: {}, lambda _action: None, grab_handler=grabbed.append,
+    )
+    assert server.grab_handler is not None
+    server.grab_handler("opaque-release-id")
+    assert grabbed == ["opaque-release-id"]
