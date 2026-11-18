@@ -495,6 +495,11 @@ def redact_log_line(value):
         line,
     )
     line = re.sub(
+        r'''(?i)(["']?(?:api[_-]?key|password|token|cookie|secret|client_secret|authorization)["']?\s*:\s*)("[^"\n]*"|'[^'\n]*'|[^,\s}\]]+)''',
+        lambda match: match.group(1) + '"[REDACTED]"',
+        line,
+    )
+    line = re.sub(
         r"(?i)(api[_-]?key|password|token|cookie|secret|client_secret)(\s*[:=]\s*)"
         r"(?:(?:bearer)\s+)?[\"']?[^\s,;\\\"']+",
         r"\1\2[REDACTED]",
