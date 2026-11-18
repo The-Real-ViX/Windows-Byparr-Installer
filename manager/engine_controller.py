@@ -30,6 +30,10 @@ class EngineController(QObject):
         self.port = 8191
         self._status = "Stopped"
         self._restart_after_stop = False
+        self._stop_timeout_timer = QTimer(self)
+        self._stop_timeout_timer.setSingleShot(True)
+        self._stop_timeout_timer.setInterval(12_000)
+        self._stop_timeout_timer.timeout.connect(self._force_stop_if_needed)
 
         self.process = QProcess(self)
         self.process.setProcessChannelMode(QProcess.MergedChannels)
@@ -109,7 +113,7 @@ class EngineController(QObject):
         self._set_status("Stopping")
         self.log_message.emit("Stopping the Byparr engine...")
         self.process.terminate()
-        QTimer.singleShot(4000, self._force_stop_if_needed)
+        self._stop_timeout_timer.start()
 
     def restart(self) -> None:
         if not self.is_running:
@@ -119,11 +123,11 @@ class EngineController(QObject):
         self._set_status("Restarting")
         self.log_message.emit("Restart requested.")
         self.process.terminate()
-        QTimer.singleShot(4000, self._force_stop_if_needed)
+        self._stop_timeout_timer.start()
 
     def _force_stop_if_needed(self) -> None:
         if self.is_running:
-            self.log_message.emit("Engine did not stop cleanly; forcing shutdown.")
+            self.log_message.emit("Engine did not stop cleanly within 12 seconds; forcing shutdown.")
             self.process.kill()
 
     def _on_started(self) -> None:
@@ -157,6 +161,7 @@ class EngineController(QObject):
                 self.log_message.emit(line.rstrip())
 
     def _on_finished(self, exit_code: int, exit_status: QProcess.ExitStatus) -> None:
+        self._stop_timeout_timer.stop()
         self.health_timer.stop()
         self._read_output()
         if exit_status == QProcess.NormalExit and exit_code == 0:
@@ -171,6 +176,7 @@ class EngineController(QObject):
 
     def _on_error(self, error: QProcess.ProcessError) -> None:
         if error == QProcess.FailedToStart:
+            self._stop_timeout_timer.stop()
             self.health_timer.stop()
             self.log_message.emit("Windows could not start the bundled Byparr engine.")
             self._set_status("Failed to start")
@@ -178,6 +184,7 @@ class EngineController(QObject):
     def shutdown(self) -> None:
         """Stop the child process before the Manager exits."""
         self._restart_after_stop = False
+        self._stop_timeout_timer.stop()
         self.health_timer.stop()
         if self.is_running:
             self.process.terminate()
