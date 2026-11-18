@@ -67,6 +67,7 @@ class ProwlarrSearchClient:
                 headers={"X-Api-Key": self.api_key},
                 timeout=180.0,
                 follow_redirects=False,
+                trust_env=False,
             )
             if response.status_code in (401, 403):
                 raise RuntimeError("Prowlarr rejected its API key.")
@@ -140,6 +141,7 @@ class ProwlarrSearchClient:
                 headers={"X-Api-Key": self.api_key},
                 timeout=30.0,
                 follow_redirects=False,
+                trust_env=False,
             )
             if response.status_code in (401, 403):
                 raise RuntimeError("Prowlarr rejected its API key.")
