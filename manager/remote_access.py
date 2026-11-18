@@ -226,7 +226,7 @@ class RemoteDashboardServer:
                     return
                 if path == "/api/action" and isinstance(payload, dict):
                     action = payload.get("action")
-                    if action not in {"start", "stop", "restart"}:
+                    if action not in {"start", "stop", "restart", "browser-health", "check-integrations"}:
                         self._json(400, {"error": "Unsupported action"})
                         return
                     owner.action_handler(action)
@@ -295,9 +295,12 @@ border-radius:12px;padding:20px;margin:16px 0}button{background:#4169e1;color:wh
 padding:11px 16px;border-radius:7px;margin:4px;cursor:pointer}pre{white-space:pre-wrap;
 overflow-wrap:anywhere;color:#b8c5d8;max-height:360px;overflow:auto}</style>
 <main><h1>BYPARR MANAGER</h1><p>Private remote dashboard</p><section class="panel">
-<h2>Engine</h2><p id="engine">Loading…</p><p id="api"></p>
+<h2>Engine</h2><p id="engine">Loading…</p><p id="api"></p><p id="browser"></p>
+<p id="prowlarr"></p><p id="qbittorrent"></p>
 <button onclick="act('start')">Start engine</button><button onclick="act('restart')">Restart</button>
-<button onclick="act('stop')">Stop</button></section><section class="panel"><h2>Recent logs</h2>
+<button onclick="act('stop')">Stop</button><button onclick="act('browser-health')">Browser Health</button>
+<button onclick="act('check-integrations')">Check Prowlarr + qBittorrent</button></section>
+<section class="panel"><h2>Recent logs</h2>
 <pre id="logs">Loading…</pre></section><button onclick="logout()">Sign out</button>
 </main><script>let csrf='';async function refresh(){const r=await fetch('/api/status');
 if(r.status===401){location.reload();return}const d=await r.json();csrf=r.headers.get('X-CSRF-Token')||csrf;
