@@ -213,7 +213,10 @@ class RemoteDashboardServer:
                         return token, session
                     expired = owner._sessions.pop(token, None)
                     if expired:
-                        owner.audit(f"Session expired for user '{owner.username}'.")
+                        owner.audit(
+                            f"Session expired for user '{owner.username}' "
+                            f"from {self.client_address[0]}."
+                        )
                 return None, None
 
             def do_GET(self):
