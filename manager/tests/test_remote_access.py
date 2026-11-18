@@ -115,6 +115,9 @@ def test_remote_dashboard_contains_prowlarr_search_panel():
     assert "renderSearchResults" in DASHBOARD
     assert "Send to qBittorrent" in DASHBOARD
     assert "window.confirm" in DASHBOARD
+    assert "nonce=\"__CSP_NONCE__\"" in DASHBOARD
+    assert "onclick=" not in DASHBOARD
+    assert 'addEventListener("click",()=>act(action))' in DASHBOARD
 
 
 def test_remote_grab_handler_is_optional_and_callable():
