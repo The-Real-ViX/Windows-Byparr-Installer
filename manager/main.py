@@ -138,6 +138,7 @@ class BrowserHealthCheckWorker(QThread):
 
 class RemoteActionBridge(QObject):
     requested = Signal(str)
+    log_requested = Signal(str)
 
 
 class ByparrManager(QMainWindow):
@@ -153,6 +154,7 @@ class ByparrManager(QMainWindow):
         self.engine_controller.status_changed.connect(self.handle_engine_status)
         self.remote_action_bridge = RemoteActionBridge(self)
         self.remote_action_bridge.requested.connect(self.handle_remote_action)
+        self.remote_action_bridge.log_requested.connect(self.append_log)
         self.remote_server = None
         self.remote_logs = []
         self.remote_engine_status = "Stopped"
@@ -1077,7 +1079,7 @@ class ByparrManager(QMainWindow):
                 self.remote_status_snapshot,
                 self.remote_action_bridge.requested.emit,
                 lambda: self.remote_logs[-100:],
-                self.append_log,
+                self.remote_action_bridge.log_requested.emit,
             )
             self.remote_server.start()
         except (ValueError, OSError) as error:
