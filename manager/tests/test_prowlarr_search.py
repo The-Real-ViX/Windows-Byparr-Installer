@@ -25,6 +25,7 @@ def test_search_uses_api_key_header_and_returns_safe_release_fields(monkeypatch)
     result = ProwlarrSearchClient("http://127.0.0.1:9696", "secret-key").search("example")
     assert captured["headers"] == {"X-Api-Key": "secret-key"}
     assert captured["params"] == {"query": "example", "type": "search", "limit": 50}
+    assert captured["timeout"] == 180.0
     assert result == [{
         "title": "Example.Release.1080p",
         "indexer": "Example Indexer",
@@ -51,4 +52,14 @@ def test_search_reports_rejected_api_key(monkeypatch):
         return httpx.Response(401, json={}, request=httpx.Request("GET", url))
     monkeypatch.setattr(httpx, "get", fake_get)
     with pytest.raises(RuntimeError, match="API key"):
+        ProwlarrSearchClient("http://127.0.0.1:9696", "key").search("example")
+
+
+
+def test_search_reports_timeout_clearly(monkeypatch):
+    def fake_get(url, **kwargs):
+        raise httpx.ReadTimeout("request timed out")
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    with pytest.raises(RuntimeError, match="timed out after 180 seconds"):
         ProwlarrSearchClient("http://127.0.0.1:9696", "key").search("example")
