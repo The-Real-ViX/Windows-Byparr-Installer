@@ -12,6 +12,7 @@ import hmac
 import ipaddress
 import json
 import re
+import socket
 import secrets
 import threading
 import time
@@ -236,7 +237,7 @@ class RemoteDashboardServer:
         server_type = ThreadingHTTPServer
         if ":" in self.host:
             class IPv6ThreadingHTTPServer(ThreadingHTTPServer):
-                address_family = 10  # socket.AF_INET6
+                address_family = socket.AF_INET6
             server_type = IPv6ThreadingHTTPServer
         self._server = server_type((self.host, self.port), Handler)
         self._server.daemon_threads = True
