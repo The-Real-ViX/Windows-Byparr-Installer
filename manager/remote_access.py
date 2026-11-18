@@ -95,9 +95,9 @@ class RemoteDashboardServer:
         """Write a credential-free security event to the Manager's normal log."""
         try:
             self.audit_logger(f"[REMOTE ACCESS] {event}")
-        except Exception:
+        except (RuntimeError, TypeError):
             # An audit sink failure must never break authentication or controls.
-            pass
+            return
 
     @property
     def running(self):
@@ -176,7 +176,7 @@ class RemoteDashboardServer:
                         status["logs"] = [
                             redact_log_line(line) for line in owner.log_provider()
                         ]
-                    except Exception as error:
+                    except (RuntimeError, OSError, ValueError, TypeError) as error:
                         owner.audit(
                             f"Dashboard status request failed: {type(error).__name__}."
                         )
