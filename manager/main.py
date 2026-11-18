@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 )
 
 from build_info import APP_VERSION, BUILD_NUMBER
+from arr_integrations import ARR_APPS, ArrIntegrationCheckWorker, validate_arr_url
 from engine_controller import EngineController, is_routine_api_probe_log_line
 from prowlarr_check import ProwlarrIntegrationCheckWorker
 from prowlarr_search import ProwlarrSearchClient
@@ -166,6 +167,9 @@ class ByparrManager(QMainWindow):
         self.remote_browser_status = "Not checked"
         self.remote_prowlarr_status = "Not checked"
         self.remote_qbittorrent_status = "Not checked"
+        self.remote_arr_status = {app_id: "Not configured" for app_id in ARR_APPS}
+        self.arr_status_labels = {}
+        self.arr_workers = {}
         self.engine_controller.log_message.connect(self.append_log)
         self.prowlarr_url = self.settings.value(
             "integrations/prowlarr_url", "http://127.0.0.1:9696", type=str
@@ -799,6 +803,9 @@ class ByparrManager(QMainWindow):
             "Configure the API key used to connect to your Jackett instance."
         )
 
+        for app_id in ("radarr", "sonarr", "lidarr"):
+            self.add_arr_integration_panel(layout, app_id)
+
         layout.addStretch()
         return page
 
@@ -947,6 +954,115 @@ class ByparrManager(QMainWindow):
         panel_layout.addLayout(actions)
         parent_layout.addWidget(panel)
 
+
+    def add_arr_integration_panel(self, parent_layout, app_id):
+        """Add a separately configured, securely credentialed Arr application."""
+        app = ARR_APPS[app_id]
+        name = app["name"]
+        default_url = f"http://127.0.0.1:{app['default_port']}"
+        url = self.settings.value(f"integrations/{app_id}_url", default_url, type=str)
+        panel, panel_layout = self.make_panel(
+            name,
+            f"Connect Byparr Manager to your {name} API. The API key is stored only in the Windows credential vault."
+        )
+        panel_layout.addWidget(QLabel(f"{name} address"))
+        url_input = QLineEdit(url)
+        url_input.setPlaceholderText(default_url)
+        panel_layout.addWidget(url_input)
+        panel_layout.addWidget(QLabel("API key"))
+        key_input = QLineEdit()
+        key_input.setEchoMode(QLineEdit.Password)
+        key_input.setPlaceholderText(f"Enter {name} API key")
+        key_input.setClearButtonEnabled(True)
+        panel_layout.addWidget(key_input)
+        status = QLabel()
+        status.setObjectName("muted")
+        status.setWordWrap(True)
+        self.arr_status_labels[app_id] = status
+        try:
+            saved = self.secret_store.get(app_id)
+            status.setText(self.remote_arr_status[app_id] if saved else "No API key saved.")
+        except SecretStorageError as error:
+            status.setText(str(error))
+        panel_layout.addWidget(status)
+
+        actions = QHBoxLayout()
+        save_button = QPushButton("Save connection")
+        save_button.setObjectName("primary")
+        def save_connection():
+            try:
+                normalized = validate_arr_url(url_input.text(), app_id)
+                self.secret_store.set(app_id, key_input.text())
+            except (SecretStorageError, ValueError) as error:
+                status.setText(str(error))
+                status.setStyleSheet("color: #e57373;")
+                return
+            self.settings.setValue(f"integrations/{app_id}_url", normalized)
+            self.settings.sync()
+            url_input.setText(normalized)
+            key_input.clear()
+            status.setText("Connection details saved securely. Run Test connection.")
+            status.setStyleSheet("color: #48c78e;")
+            self.update_integration_metric()
+        save_button.clicked.connect(save_connection)
+        actions.addWidget(save_button)
+
+        test_button = QPushButton("Test connection")
+        def test_connection():
+            if app_id in self.arr_workers and self.arr_workers[app_id].isRunning():
+                return
+            try:
+                normalized = validate_arr_url(url_input.text(), app_id)
+                api_key = self.secret_store.get(app_id)
+            except (SecretStorageError, ValueError) as error:
+                status.setText(str(error))
+                status.setStyleSheet("color: #e57373;")
+                return
+            if not api_key:
+                status.setText("Save the API key before testing this connection.")
+                status.setStyleSheet("color: #e7bd70;")
+                return
+            self.settings.setValue(f"integrations/{app_id}_url", normalized)
+            self.settings.sync()
+            status.setText("Checking connection…")
+            status.setStyleSheet("color: #e7bd70;")
+            test_button.setEnabled(False)
+            worker = ArrIntegrationCheckWorker(app_id, normalized, api_key, self)
+            self.arr_workers[app_id] = worker
+            worker.result.connect(self.handle_arr_check_result)
+            worker.finished.connect(lambda: test_button.setEnabled(True))
+            worker.start()
+        test_button.clicked.connect(test_connection)
+        actions.addWidget(test_button)
+
+        remove_button = QPushButton("Remove API key")
+        def remove_key():
+            try:
+                self.secret_store.delete(app_id)
+            except SecretStorageError as error:
+                status.setText(str(error))
+                status.setStyleSheet("color: #e57373;")
+                return
+            key_input.clear()
+            self.remote_arr_status[app_id] = "API key not saved"
+            status.setText("Saved API key removed from the credential vault.")
+            status.setStyleSheet("color: #98a5b8;")
+            self.update_integration_metric()
+        remove_button.clicked.connect(remove_key)
+        actions.addWidget(remove_button)
+        actions.addStretch()
+        panel_layout.addLayout(actions)
+        parent_layout.addWidget(panel)
+
+    def handle_arr_check_result(self, app_id, ok, message):
+        """Update the matching Arr status without logging credential material."""
+        self.remote_arr_status[app_id] = message
+        label = self.arr_status_labels.get(app_id)
+        if label is not None:
+            label.setText(message)
+            label.setStyleSheet("color: #48c78e;" if ok else "color: #e57373;")
+        self.append_log(f"{ARR_APPS[app_id]['name']} integration check: {message}")
+
     def create_settings(self):
         page = QWidget()
         outer_layout = QVBoxLayout(page)
@@ -1076,6 +1192,7 @@ class ByparrManager(QMainWindow):
             "browser": self.remote_browser_status,
             "prowlarr": self.remote_prowlarr_status,
             "qbittorrent": self.remote_qbittorrent_status,
+            **self.remote_arr_status,
         }
 
     def handle_remote_action(self, action):
