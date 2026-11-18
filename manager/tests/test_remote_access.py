@@ -43,3 +43,15 @@ def test_password_verifier_is_salted_and_verifiable():
 def test_password_policy_rejects_short_password():
     with pytest.raises(ValueError, match="14 characters"):
         password_verifier("too-short")
+
+
+def test_remote_log_redaction_masks_common_secrets():
+    from remote_access import redact_log_line
+
+    line = "api_key=abc123 password:hello token=xyz cookie=session123"
+    result = redact_log_line(line)
+    assert "abc123" not in result
+    assert "hello" not in result
+    assert "xyz" not in result
+    assert "session123" not in result
+    assert result.count("[REDACTED]") == 4
