@@ -61,15 +61,45 @@ def password_verifier(password: str, salt: bytes | None = None) -> tuple[str, st
 
 
 def verify_password(password: str, salt_hex: str, verifier_hex: str) -> bool:
+    if not isinstance(password, str) or len(password) > 1024:
+        return False
     try:
         salt = bytes.fromhex(salt_hex)
         expected = bytes.fromhex(verifier_hex)
-    except ValueError:
+    except (TypeError, ValueError):
+        return False
+    if len(salt) != 16 or len(expected) != 32:
         return False
     actual = hashlib.pbkdf2_hmac(
         "sha256", password.encode("utf-8"), salt, PASSWORD_ITERATIONS
     )
     return hmac.compare_digest(actual, expected)
+
+
+def validate_request_host(host_header: str, host: str, port: int) -> bool:
+    """Reject unexpected Host headers to reduce DNS-rebinding exposure."""
+    address = f"[{host}]" if ":" in host else host
+    return isinstance(host_header, str) and hmac.compare_digest(
+        host_header.strip().lower(), f"{address}:{port}".lower()
+    )
+
+
+def validate_request_origin(origin: str, host_header: str) -> bool:
+    """Allow only browser POSTs whose Origin exactly matches the request Host."""
+    if not isinstance(origin, str) or not isinstance(host_header, str):
+        return False
+    try:
+        parsed = urlparse(origin)
+        return (
+            parsed.scheme == "http"
+            and parsed.netloc.lower() == host_header.strip().lower()
+            and parsed.path == ""
+            and not parsed.params
+            and not parsed.query
+            and not parsed.fragment
+        )
+    except ValueError:
+        return False
 
 
 class RemoteDashboardServer:
@@ -78,6 +108,8 @@ class RemoteDashboardServer:
     def __init__(self, host, port, username, salt, verifier, status_provider,
                  action_handler, log_provider=None, audit_logger=None, search_handler=None, grab_handler=None):
         self.host, self.port = validate_tailscale_binding(host, port)
+        if not isinstance(username, str) or not re.fullmatch(r"[A-Za-z0-9_.@-]{1,64}", username):
+            raise ValueError("Remote dashboard username must be 1–64 safe characters.")
         self.username = username
         self.salt = salt
         self.verifier = verifier
@@ -127,9 +159,10 @@ class RemoteDashboardServer:
                 self.send_header("X-Content-Type-Options", "nosniff")
                 self.send_header("X-Frame-Options", "DENY")
                 self.send_header("Referrer-Policy", "no-referrer")
-                self.send_header("Content-Security-Policy",
-                                 "default-src 'self'; script-src 'self' 'unsafe-inline'; "
-                                 "style-src 'self' 'unsafe-inline'; frame-ancestors 'none'")
+                if not (headers and "Content-Security-Policy" in headers):
+                    self.send_header("Content-Security-Policy",
+                                     "default-src 'self'; script-src 'self'; "
+                                     "style-src 'self' 'unsafe-inline'; frame-ancestors 'none'")
                 self.send_header("Cache-Control", "no-store")
                 for key, value in (headers or {}).items():
                     self.send_header(key, value)
@@ -140,18 +173,40 @@ class RemoteDashboardServer:
                 self._send(status, json.dumps(payload), headers=headers)
 
             def _body(self):
-                try:
-                    length = int(self.headers.get("Content-Length", "0"))
-                    if length > 8192:
-                        return None
-                    return json.loads(self.rfile.read(length) or b"{}")
-                except (ValueError, json.JSONDecodeError):
+                raw_length = self.headers.get("Content-Length", "0")
+                if not raw_length.isdigit():
                     return None
+                length = int(raw_length)
+                if length < 0 or length > 8192:
+                    return None
+                if length == 0:
+                    return {}
+                if self.headers.get_content_type() != "application/json":
+                    return None
+                raw = self.rfile.read(length)
+                if len(raw) != length:
+                    return None
+                try:
+                    return json.loads(raw)
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    return None
+
+            def _trusted_request(self, require_origin=False):
+                expected_host = f"[{owner.host}]:{owner.port}" if ":" in owner.host else f"{owner.host}:{owner.port}"
+                host_header = self.headers.get("Host", "")
+                if not validate_request_host(host_header, owner.host, owner.port):
+                    return False
+                if require_origin and not validate_request_origin(
+                    self.headers.get("Origin", ""), host_header
+                ):
+                    return False
+                return True
 
             def _session(self):
                 cookie = self.headers.get("Cookie", "")
-                token = next((part.split("=", 1)[1] for part in cookie.split("; ")
-                              if part.startswith("byparr_session=")), "")
+                token = next((part.strip().split("=", 1)[1]
+                              for part in cookie.split(";")
+                              if part.strip().startswith("byparr_session=")), "")
                 with owner._lock:
                     session = owner._sessions.get(token)
                     if session and session["expires"] > time.time():
@@ -163,11 +218,21 @@ class RemoteDashboardServer:
                 return None, None
 
             def do_GET(self):
+                if not self._trusted_request():
+                    self._json(HTTPStatus.BAD_REQUEST, {"error": "Invalid request host"})
+                    return
                 path = urlparse(self.path).path
                 if path == "/":
                     _, session = self._session()
-                    self._send(200, DASHBOARD if session else LOGIN_PAGE,
-                               "text/html")
+                    nonce = secrets.token_urlsafe(18)
+                    page = DASHBOARD if session else LOGIN_PAGE
+                    page = page.replace("__CSP_NONCE__", nonce)
+                    self._send(
+                        200, page, "text/html",
+                        {"Content-Security-Policy":
+                         f"default-src 'self'; script-src 'self' 'nonce-{nonce}'; "
+                         "style-src 'self' 'unsafe-inline'; frame-ancestors 'none'"},
+                    )
                     return
                 if path == "/api/status":
                     _, session = self._session()
@@ -191,6 +256,9 @@ class RemoteDashboardServer:
                 self._json(HTTPStatus.NOT_FOUND, {"error": "Not found"})
 
             def do_POST(self):
+                if not self._trusted_request(require_origin=True):
+                    self._json(HTTPStatus.FORBIDDEN, {"error": "Request origin rejected"})
+                    return
                 path = urlparse(self.path).path
                 if path == "/login":
                     payload = self._body()
@@ -209,16 +277,19 @@ class RemoteDashboardServer:
                     attempted_username = "".join(
                         char for char in attempted_username[:64] if char.isprintable()
                     )
-                    valid = (
-                        attempted_username == owner.username
-                        and isinstance(payload.get("password"), str)
-                        and verify_password(payload["password"], owner.salt,
-                                            owner.verifier)
+                    attempted_password = payload.get("password", "")
+                    if not isinstance(attempted_password, str):
+                        attempted_password = ""
+                    password_ok = verify_password(
+                        attempted_password, owner.salt, owner.verifier
                     )
+                    valid = attempted_username == owner.username and password_ok
                     if not valid or len(failures) >= 5:
                         if not valid:
                             with owner._lock:
-                                owner._failures[address].append(now)
+                                owner._failures[address] = (
+                                    owner._failures.get(address, []) + [now]
+                                )[-5:]
                             owner.audit(
                                 f"Login failed for username '{attempted_username}' from {address}."
                             )
@@ -229,6 +300,15 @@ class RemoteDashboardServer:
                     token = secrets.token_urlsafe(32)
                     csrf = secrets.token_urlsafe(24)
                     with owner._lock:
+                        owner._sessions = {
+                            key: value for key, value in owner._sessions.items()
+                            if value["expires"] > now
+                        }
+                        if len(owner._sessions) >= 32:
+                            owner.audit("Login blocked because the active session limit was reached.")
+                            self._json(HTTPStatus.TOO_MANY_REQUESTS,
+                                       {"error": "Too many active sessions. Sign out elsewhere first."})
+                            return
                         owner._sessions[token] = {
                             "csrf": csrf, "expires": now + SESSION_SECONDS
                         }
@@ -384,7 +464,7 @@ cursor:pointer;font-weight:bold}#error{color:#ff9292}</style>
 <form id="login"><input name="username" autocomplete="username" placeholder="Username" required>
 <input name="password" type="password" autocomplete="current-password" placeholder="Password" required>
 <button>Sign in</button></form><p id="error" role="alert"></p></div>
-<script>document.querySelector('#login').onsubmit=async e=>{e.preventDefault();
+<script nonce="__CSP_NONCE__">document.querySelector('#login').onsubmit=async e=>{e.preventDefault();
 const f=new FormData(e.target);const r=await fetch('/login',{method:'POST',
 headers:{'Content-Type':'application/json'},body:JSON.stringify({username:f.get('username'),
 password:f.get('password')})});if(r.ok)location.href='/';else document.querySelector('#error').textContent=
@@ -431,7 +511,7 @@ box-sizing:border-box;animation:spin .8s linear infinite;flex:none}.spinner[hidd
 </section>
 <section class="panel"><h2>Recent logs</h2>
 <pre id="logs">Loading…</pre></section><button onclick="logout()">Sign out</button>
-</main><script>let csrf='';async function refresh(){try{const r=await fetch('/api/status',{cache:'no-store',credentials:'same-origin'});
+</main><script nonce="__CSP_NONCE__">let csrf='';async function refresh(){try{const r=await fetch('/api/status',{cache:'no-store',credentials:'same-origin'});
 if(r.status===401){location.reload();return}const d=await r.json();if(!r.ok)throw new Error(d.error||('HTTP '+r.status));csrf=r.headers.get('X-CSRF-Token')||csrf;
 document.querySelector('#engine').textContent=d.engine||'Unknown';
 document.querySelector('#api').textContent=d.api||'';
