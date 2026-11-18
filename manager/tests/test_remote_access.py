@@ -91,6 +91,12 @@ def test_dashboard_script_uses_valid_newline_expression():
     assert ".join(String.fromCharCode(10))" in DASHBOARD
     assert "Live status updated:" in DASHBOARD
     assert "setInterval(refresh,5000)" in DASHBOARD
+    assert "searchInFlight" in DASHBOARD
+    assert "button.disabled=true" in DASHBOARD
+    assert "button.disabled=false" in DASHBOARD
+    assert "search-spinner" in DASHBOARD
+    assert "elapsedSearchSeconds()" in DASHBOARD
+    assert "Keep this page open." in DASHBOARD
 
 
 
