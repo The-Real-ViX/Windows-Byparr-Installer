@@ -56,6 +56,15 @@ def test_remote_log_redaction_masks_common_secrets():
     assert "session123" not in result
     assert result.count("[REDACTED]") == 4
 
+    from remote_access import redact_log_line
+
+    sensitive = redact_log_line(
+        "Authorization: Bearer abc123 https://user:pass@example.test/path "
+        "https://host.test/api?apikey=secret&token=private"
+    )
+    for secret in ("abc123", "pass@", "secret", "private"):
+        assert secret not in sensitive
+
 
 
 def test_remote_audit_events_are_sent_to_manager_log():
