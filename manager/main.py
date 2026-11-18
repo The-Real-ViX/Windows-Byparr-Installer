@@ -1092,7 +1092,9 @@ class ByparrManager(QMainWindow):
             salt = self.settings.value("remote/password_salt", "", type=str)
             verifier = self.settings.value("remote/password_verifier", "", type=str)
             new_password = self.remote_password_input.text()
-            if new_password: salt, verifier = password_verifier(new_password)
+            if new_password:
+                salt, verifier = password_verifier(new_password)
+                self.remote_password_input.clear()
             elif not salt or not verifier: raise ValueError("Set a new remote login password with at least 14 characters.")
             self.settings.setValue("remote/host", host)
             self.settings.setValue("remote/port", port)
