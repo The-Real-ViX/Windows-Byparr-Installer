@@ -1057,6 +1057,29 @@ class ByparrManager(QMainWindow):
         panel_layout.addLayout(actions)
         parent_layout.addWidget(panel)
 
+    def check_all_arr_integrations(self):
+        """Refresh all configured Arr connections for the remote status dashboard."""
+        for app_id in ARR_APPS:
+            if app_id in self.arr_workers and self.arr_workers[app_id].isRunning():
+                continue
+            try:
+                api_key = self.secret_store.get(app_id)
+                url = self.settings.value(
+                    f"integrations/{app_id}_url",
+                    f"http://127.0.0.1:{ARR_APPS[app_id]['default_port']}",
+                    type=str,
+                )
+            except SecretStorageError:
+                self.remote_arr_status[app_id] = "Credential vault unavailable"
+                continue
+            if not api_key:
+                self.remote_arr_status[app_id] = "API key not saved"
+                continue
+            worker = ArrIntegrationCheckWorker(app_id, url, api_key, self)
+            self.arr_workers[app_id] = worker
+            worker.result.connect(self.handle_arr_check_result)
+            worker.start()
+
     def handle_arr_check_result(self, app_id, ok, message):
         """Update the matching Arr status without logging credential material."""
         self.remote_arr_status[app_id] = message
@@ -1209,6 +1232,7 @@ class ByparrManager(QMainWindow):
             self.check_browser_health()
         elif action == "check-integrations":
             self.check_prowlarr_integration()
+            self.check_all_arr_integrations()
 
     def start_remote_access(self):
         if self.remote_server and self.remote_server.running: return
