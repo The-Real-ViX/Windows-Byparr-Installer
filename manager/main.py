@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
 )
 
 from build_info import APP_VERSION, BUILD_NUMBER
-from engine_controller import EngineController
+from engine_controller import EngineController, is_routine_api_probe_log_line
 from prowlarr_check import ProwlarrIntegrationCheckWorker
 from secret_store import SecretStorageError, SecretStore
 from remote_access import RemoteDashboardServer, password_verifier, validate_tailscale_binding
@@ -655,6 +655,8 @@ class ByparrManager(QMainWindow):
             self.browser_health_button.setEnabled(status == "Running")
 
     def append_log(self, message):
+        if is_routine_api_probe_log_line(message):
+            return
         self.remote_logs.append(str(message))
         self.remote_logs = self.remote_logs[-100:]
         if hasattr(self, "log_view"):
