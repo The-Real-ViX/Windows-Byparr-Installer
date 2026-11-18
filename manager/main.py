@@ -12,6 +12,7 @@ import httpx
 from PySide6.QtCore import QSettings, QStandardPaths, Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -31,6 +32,7 @@ from build_info import APP_VERSION, BUILD_NUMBER
 from engine_controller import EngineController
 from prowlarr_check import ProwlarrIntegrationCheckWorker
 from secret_store import SecretStorageError, SecretStore
+from tailscale import get_tailscale_ipv4
 
 
 DEFAULT_API_HOST = "127.0.0.1"
@@ -145,6 +147,10 @@ class ByparrManager(QMainWindow):
         self.settings = QSettings("RedHeX", "ByparrManager")
         self.secret_store = SecretStore()
         self.engine_controller = EngineController(self)
+        self.tailscale_enabled = self.settings.value(
+            "network/tailscale_enabled", False, type=bool
+        )
+        self.tailscale_ip = None
         self.engine_controller.status_changed.connect(self.handle_engine_status)
         self.engine_controller.log_message.connect(self.append_log)
         self.prowlarr_url = self.settings.value(
@@ -367,6 +373,7 @@ class ByparrManager(QMainWindow):
         root.addWidget(sidebar)
         root.addWidget(self.pages, 1)
         self.change_page(0)
+        self.refresh_tailscale_status()
 
     def change_page(self, index):
         self.pages.setCurrentIndex(index)
@@ -599,14 +606,34 @@ class ByparrManager(QMainWindow):
         return page
 
     def start_engine(self):
+        self.refresh_tailscale_status()
+        if self.tailscale_enabled and not self.tailscale_ip:
+            QMessageBox.warning(
+                self, "Tailscale is not connected",
+                "Connect this Windows PC to Tailscale, then refresh the Tailscale status before starting Byparr."
+            )
+            return
         self.engine_controller.port = self.api_port
+        self.engine_controller.host = (
+            self.tailscale_ip if self.tailscale_enabled else self.api_host
+        )
         self.engine_controller.start()
 
     def stop_engine(self):
         self.engine_controller.stop()
 
     def restart_engine(self):
+        self.refresh_tailscale_status()
+        if self.tailscale_enabled and not self.tailscale_ip:
+            QMessageBox.warning(
+                self, "Tailscale is not connected",
+                "Connect this Windows PC to Tailscale, then refresh the Tailscale status before restarting Byparr."
+            )
+            return
         self.engine_controller.port = self.api_port
+        self.engine_controller.host = (
+            self.tailscale_ip if self.tailscale_enabled else self.api_host
+        )
         self.engine_controller.restart()
 
     def handle_engine_status(self, status):
@@ -664,7 +691,9 @@ class ByparrManager(QMainWindow):
         self.api_connection_status.setStyleSheet("color: #e7bd70;")
         self.check_button.setEnabled(False)
 
-        self.api_worker = ApiCheckWorker(api_endpoint(self.api_host, self.api_port), self)
+        self.api_worker = ApiCheckWorker(
+            api_endpoint(self.engine_controller.host, self.api_port), self
+        )
         self.api_worker.result.connect(self.handle_api_check_result)
         self.api_worker.finished.connect(
             lambda: self.check_button.setEnabled(True)
@@ -957,8 +986,92 @@ class ByparrManager(QMainWindow):
         panel_layout.addWidget(self.settings_status)
 
         layout.addWidget(panel)
+
+        tailscale_panel, tailscale_layout = self.make_panel(
+            "Tailscale remote access",
+            "Optionally let your other Tailscale devices reach Byparr over its private Tailscale IPv4 address. "
+            "The engine binds only to that address, never to every network interface."
+        )
+        self.tailscale_enabled_checkbox = QCheckBox(
+            "Enable remote access over Tailscale"
+        )
+        self.tailscale_enabled_checkbox.setChecked(self.tailscale_enabled)
+        tailscale_layout.addWidget(self.tailscale_enabled_checkbox)
+        self.tailscale_status_label = QLabel("Tailscale status has not been checked.")
+        self.tailscale_status_label.setObjectName("muted")
+        self.tailscale_status_label.setWordWrap(True)
+        tailscale_layout.addWidget(self.tailscale_status_label)
+        self.tailscale_address_label = QLabel("Remote address: not available")
+        self.tailscale_address_label.setObjectName("muted")
+        tailscale_layout.addWidget(self.tailscale_address_label)
+        tailscale_actions = QHBoxLayout()
+        refresh_tailscale_button = QPushButton("Refresh Tailscale status")
+        refresh_tailscale_button.setCursor(Qt.PointingHandCursor)
+        refresh_tailscale_button.clicked.connect(self.refresh_tailscale_status)
+        tailscale_actions.addWidget(refresh_tailscale_button)
+        save_tailscale_button = QPushButton("Save Tailscale setting")
+        save_tailscale_button.setObjectName("primary")
+        save_tailscale_button.setCursor(Qt.PointingHandCursor)
+        save_tailscale_button.clicked.connect(self.save_tailscale_settings)
+        tailscale_actions.addWidget(save_tailscale_button)
+        tailscale_actions.addStretch()
+        tailscale_layout.addLayout(tailscale_actions)
+        layout.addWidget(tailscale_panel)
         layout.addStretch()
         return page
+
+    def refresh_tailscale_status(self):
+        """Detect the active Tailscale address and update the engine bind target."""
+        self.tailscale_ip = get_tailscale_ipv4()
+        if not hasattr(self, "tailscale_status_label"):
+            return
+        if self.tailscale_ip:
+            self.tailscale_status_label.setText(
+                f"Tailscale detected. This PC address: {self.tailscale_ip}"
+            )
+            self.tailscale_status_label.setStyleSheet("color: #48c78e;")
+            self.tailscale_address_label.setText(
+                f"Remote Byparr API: http://{self.tailscale_ip}:{self.api_port}"
+            )
+        else:
+            self.tailscale_status_label.setText(
+                "Tailscale was not detected as connected. Install/sign in to Tailscale on this PC, then refresh."
+            )
+            self.tailscale_status_label.setStyleSheet("color: #e7bd70;")
+            self.tailscale_address_label.setText("Remote address: not available")
+
+        if self.tailscale_enabled and self.tailscale_ip:
+            self.engine_controller.host = self.tailscale_ip
+            self.endpoint_label.setText(
+                f"TAILSCALE API     http://{self.tailscale_ip}:{self.api_port}"
+            )
+        elif not self.tailscale_enabled:
+            self.engine_controller.host = self.api_host
+            self.endpoint_label.setText(
+                f"LOCAL API     {api_endpoint(self.api_host, self.api_port)}"
+            )
+
+    def save_tailscale_settings(self):
+        """Persist the opt-in setting; apply the bind address on the next engine start."""
+        self.tailscale_enabled = self.tailscale_enabled_checkbox.isChecked()
+        self.settings.setValue("network/tailscale_enabled", self.tailscale_enabled)
+        self.settings.sync()
+        self.refresh_tailscale_status()
+        if self.tailscale_enabled and not self.tailscale_ip:
+            self.tailscale_status_label.setText(
+                "Setting saved, but Tailscale is not connected. Byparr will not start in remote mode until an address is detected."
+            )
+            self.tailscale_status_label.setStyleSheet("color: #e7bd70;")
+        elif self.tailscale_enabled:
+            self.tailscale_status_label.setText(
+                "Tailscale remote access is enabled. Restart the engine to apply the new network binding."
+            )
+            self.tailscale_status_label.setStyleSheet("color: #48c78e;")
+        else:
+            self.tailscale_status_label.setText(
+                "Tailscale remote access is disabled. Byparr will use your configured API host."
+            )
+            self.tailscale_status_label.setStyleSheet("color: #98a5b8;")
 
     def save_api_settings(self):
         try:
@@ -973,6 +1086,8 @@ class ByparrManager(QMainWindow):
         self.api_host = host
         self.api_port = port
         self.engine_controller.port = port
+        if not self.tailscale_enabled:
+            self.engine_controller.host = host
         self.settings.setValue("api/host", host)
         self.settings.setValue("api/port", port)
         self.settings.sync()
