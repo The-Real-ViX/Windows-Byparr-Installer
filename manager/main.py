@@ -692,7 +692,7 @@ class ByparrManager(QMainWindow):
         self.check_button.setEnabled(False)
 
         self.api_worker = ApiCheckWorker(
-            api_endpoint(self.engine_controller.host, self.api_port), self
+            api_endpoint(self.engine_controller.host, self.engine_controller.port), self
         )
         self.api_worker.result.connect(self.handle_api_check_result)
         self.api_worker.finished.connect(
