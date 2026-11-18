@@ -1072,7 +1072,13 @@ class ByparrManager(QMainWindow):
             self.settings.setValue("remote/password_salt", salt)
             self.settings.setValue("remote/password_verifier", verifier)
             self.settings.sync()
-            self.remote_server = RemoteDashboardServer(host, port, username, salt, verifier, self.remote_status_snapshot, self.remote_action_bridge.requested.emit, lambda: self.remote_logs[-100:])
+            self.remote_server = RemoteDashboardServer(
+                host, port, username, salt, verifier,
+                self.remote_status_snapshot,
+                self.remote_action_bridge.requested.emit,
+                lambda: self.remote_logs[-100:],
+                self.append_log,
+            )
             self.remote_server.start()
         except (ValueError, OSError) as error:
             self.remote_status_label.setText(f"Could not enable remote access: {error}")
