@@ -81,12 +81,13 @@ class ProwlarrSearchClient:
             title = str(item.get("title") or "").strip()
             if not title:
                 continue
-            grab_id = secrets.token_urlsafe(24)
-            self._releases[grab_id] = dict(item)
-            if len(self._releases) > 500:
-                self._releases.pop(next(iter(self._releases)))
-            results.append({
-                "grab_id": grab_id,
+            grab_id = None
+            if item.get("guid") and isinstance(item.get("indexerId"), int):
+                grab_id = secrets.token_urlsafe(24)
+                self._releases[grab_id] = dict(item)
+                if len(self._releases) > 500:
+                    self._releases.pop(next(iter(self._releases)))
+            result = {
                 "title": title[:500],
                 "indexer": str(
                     item.get("indexer") or item.get("indexerName") or "Unknown indexer"
@@ -102,7 +103,10 @@ class ProwlarrSearchClient:
                 ),
                 "protocol": str(item.get("protocol") or "")[:40],
                 "publish_date": str(item.get("publishDate") or "")[:40],
-            })
+            }
+            if grab_id:
+                result["grab_id"] = grab_id
+            results.append(result)
         return results
 
     def grab(self, grab_id: str) -> None:
