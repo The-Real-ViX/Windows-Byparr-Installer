@@ -490,9 +490,9 @@ box-sizing:border-box;animation:spin .8s linear infinite;flex:none}.spinner[hidd
 <main><h1>BYPARR MANAGER</h1><p>Private remote dashboard</p><section class="panel">
 <h2>Engine</h2><p id="updated" aria-live="polite">Waiting for live status…</p><p id="engine" aria-live="polite">Loading…</p><p id="api"></p><p id="browser"></p>
 <p id="prowlarr"></p><p id="qbittorrent"></p>
-<button onclick="act('start')">Start engine</button><button onclick="act('restart')">Restart</button>
-<button onclick="act('stop')">Stop</button><button onclick="act('browser-health')">Browser Health</button>
-<button onclick="act('check-integrations')">Check Prowlarr + qBittorrent</button></section>
+<button id="start-engine">Start engine</button><button id="restart-engine">Restart</button>
+<button id="stop-engine">Stop</button><button id="browser-health">Browser Health</button>
+<button id="check-integrations">Check Prowlarr + qBittorrent</button></section>
 <section class="panel"><h2>Prowlarr Search</h2>
 <p class="muted">Search your configured Prowlarr indexers and view results here on your iPad.</p>
 <form id="search-form"><label for="search-category">Search category</label>
@@ -509,7 +509,7 @@ box-sizing:border-box;animation:spin .8s linear infinite;flex:none}.spinner[hidd
 <div id="search-results"></div><h3>Recent searches</h3><div id="search-history" class="muted">No searches yet.</div>
 </section>
 <section class="panel"><h2>Recent logs</h2>
-<pre id="logs">Loading…</pre></section><button onclick="logout()">Sign out</button>
+<pre id="logs">Loading…</pre></section><button id="logout">Sign out</button>
 </main><script nonce="__CSP_NONCE__">let csrf='';async function refresh(){try{const r=await fetch('/api/status',{cache:'no-store',credentials:'same-origin'});
 if(r.status===401){location.reload();return}const d=await r.json();if(!r.ok)throw new Error(d.error||('HTTP '+r.status));csrf=r.headers.get('X-CSRF-Token')||csrf;
 document.querySelector('#engine').textContent=d.engine||'Unknown';
@@ -577,4 +577,6 @@ document.querySelector('#search-results').removeAttribute('aria-busy');}});
 async function act(action){try{const r=await fetch('/api/action',{method:'POST',credentials:'same-origin',headers:{
 'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action})});if(!r.ok)throw new Error('HTTP '+r.status);setTimeout(refresh,700)}
 catch(error){document.querySelector('#engine').textContent='Action failed: '+error.message;}}
+for(const [id,action] of Object.entries({"start-engine":"start","restart-engine":"restart","stop-engine":"stop","browser-health":"browser-health","check-integrations":"check-integrations"})){document.getElementById(id).addEventListener("click",()=>act(action));}
+document.getElementById("logout").addEventListener("click",logout);
 async function logout(){await fetch('/logout',{method:'POST',credentials:'same-origin',headers:{'X-CSRF-Token':csrf}});location.reload()}refresh();setInterval(refresh,5000);</script></html>"""
