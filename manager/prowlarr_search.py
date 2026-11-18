@@ -45,7 +45,7 @@ class ProwlarrSearchClient:
         except httpx.HTTPError as error:
             raise RuntimeError("Could not retrieve Prowlarr search results.") from error
         if not isinstance(payload, list):
-            raise ValueError("Unexpected Prowlarr search response.")
+            raise TypeError("Unexpected Prowlarr search response.")
         results = []
         for item in payload[:50]:
             if not isinstance(item, dict):
