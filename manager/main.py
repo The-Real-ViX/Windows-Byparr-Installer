@@ -1039,15 +1039,15 @@ class ByparrManager(QMainWindow):
         outer_layout.addWidget(scroll, 1)
         return page
 
-    def remote_prowlarr_search(self, query):
-        """Run a read-only Prowlarr search without exposing its API key remotely."""
+    def remote_prowlarr_search(self, query, category="all"):
+        """Run a read-only, category-filtered Prowlarr search without exposing its API key remotely."""
         try:
             api_key = self.secret_store.get("prowlarr")
         except SecretStorageError as error:
             raise RuntimeError("Prowlarr API key is unavailable.") from error
         if not api_key:
             raise RuntimeError("Prowlarr API key is not saved.")
-        return ProwlarrSearchClient(self.prowlarr_url, api_key).search(query)
+        return ProwlarrSearchClient(self.prowlarr_url, api_key).search(query, category)
 
     def remote_status_snapshot(self):
         return {
