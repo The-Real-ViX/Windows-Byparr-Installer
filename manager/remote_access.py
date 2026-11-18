@@ -332,7 +332,7 @@ border-radius:12px;padding:20px;margin:16px 0}button{background:#4169e1;color:wh
 padding:11px 16px;border-radius:7px;margin:4px;cursor:pointer}pre{white-space:pre-wrap;
 overflow-wrap:anywhere;color:#b8c5d8;max-height:360px;overflow:auto}</style>
 <main><h1>BYPARR MANAGER</h1><p>Private remote dashboard</p><section class="panel">
-<h2>Engine</h2><p id="engine">Loading…</p><p id="api"></p><p id="browser"></p>
+<h2>Engine</h2><p id="updated" aria-live="polite">Waiting for live status…</p><p id="engine" aria-live="polite">Loading…</p><p id="api"></p><p id="browser"></p>
 <p id="prowlarr"></p><p id="qbittorrent"></p>
 <button onclick="act('start')">Start engine</button><button onclick="act('restart')">Restart</button>
 <button onclick="act('stop')">Stop</button><button onclick="act('browser-health')">Browser Health</button>
@@ -346,9 +346,9 @@ document.querySelector('#api').textContent=d.api||'';
 document.querySelector('#browser').textContent='Browser health: '+(d.browser||'Not checked');
 document.querySelector('#prowlarr').textContent='Prowlarr: '+(d.prowlarr||'Not checked');
 document.querySelector('#qbittorrent').textContent='qBittorrent: '+(d.qbittorrent||'Not checked');
-document.querySelector('#logs').textContent=(Array.isArray(d.logs)?d.logs:[]).join(String.fromCharCode(10));
+document.querySelector('#logs').textContent=(Array.isArray(d.logs)?d.logs:[]).join(String.fromCharCode(10));\ndocument.querySelector('#updated').textContent='Live status updated: '+new Date().toLocaleTimeString();
 }catch(error){const message='Dashboard data unavailable: '+(error&&error.message?error.message:'network or browser error');
-document.querySelector('#engine').textContent=message;document.querySelector('#api').textContent='Check that the Windows Manager is still running and remote access is enabled.';
+document.querySelector('#updated').textContent='Status refresh failed';document.querySelector('#engine').textContent=message;document.querySelector('#api').textContent='Check that the Windows Manager is still running and remote access is enabled.';
 document.querySelector('#logs').textContent=message;}}
 async function act(action){try{const r=await fetch('/api/action',{method:'POST',credentials:'same-origin',headers:{
 'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action})});if(!r.ok)throw new Error('HTTP '+r.status);setTimeout(refresh,700)}
