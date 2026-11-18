@@ -220,17 +220,21 @@ class RemoteDashboardServer:
                               if part.strip().startswith("byparr_session=")), "")
                 with owner._lock:
                     now = time.time()
-                    owner._sessions = {
-                        key: value for key, value in owner._sessions.items()
-                        if value["expires"] > now
-                    }
                     session = owner._sessions.get(token)
-                    if session and session.get("client") == self.client_address[0]:
+                    if (
+                        session
+                        and session["expires"] > now
+                        and session.get("client") == self.client_address[0]
+                    ):
                         session["expires"] = now + SESSION_SECONDS
                         return token, session
                     invalidated = owner._sessions.pop(token, None)
                     if invalidated:
-                        reason = "client address changed" if invalidated.get("client") != self.client_address[0] else "session expired"
+                        reason = (
+                            "client address changed"
+                            if invalidated.get("client") != self.client_address[0]
+                            else "session expired"
+                        )
                         owner.audit(
                             f"Session invalidated ({reason}) for user '{owner.username}' "
                             f"from {self.client_address[0]}."
