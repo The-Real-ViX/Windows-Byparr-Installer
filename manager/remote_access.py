@@ -261,7 +261,7 @@ class RemoteDashboardServer:
                     try:
                         results = owner.search_handler(query)
                         if not isinstance(results, list):
-                            raise ValueError("Unexpected search response")
+                            raise TypeError("Unexpected search response")
                     except (RuntimeError, OSError, ValueError, TypeError):
                         owner.audit(
                             f"Prowlarr search failed for user '{owner.username}' from {self.client_address[0]}."
