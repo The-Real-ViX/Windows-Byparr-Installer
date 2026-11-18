@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 from build_info import APP_VERSION, BUILD_NUMBER
 from engine_controller import EngineController, is_routine_api_probe_log_line
 from prowlarr_check import ProwlarrIntegrationCheckWorker
+from prowlarr_search import ProwlarrSearchClient
 from secret_store import SecretStorageError, SecretStore
 from remote_access import RemoteDashboardServer, password_verifier, validate_tailscale_binding
 
@@ -1038,6 +1039,16 @@ class ByparrManager(QMainWindow):
         outer_layout.addWidget(scroll, 1)
         return page
 
+    def remote_prowlarr_search(self, query):
+        """Run a read-only Prowlarr search without exposing its API key remotely."""
+        try:
+            api_key = self.secret_store.get("prowlarr")
+        except SecretStorageError as error:
+            raise RuntimeError("Prowlarr API key is unavailable.") from error
+        if not api_key:
+            raise RuntimeError("Prowlarr API key is not saved.")
+        return ProwlarrSearchClient(self.prowlarr_url, api_key).search(query)
+
     def remote_status_snapshot(self):
         return {
             "engine": self.remote_engine_status,
@@ -1082,6 +1093,7 @@ class ByparrManager(QMainWindow):
                 self.remote_action_bridge.requested.emit,
                 lambda: self.remote_logs[-100:],
                 self.remote_action_bridge.log_requested.emit,
+                search_handler=self.remote_prowlarr_search,
             )
             self.remote_server.start()
         except (ValueError, OSError) as error:
