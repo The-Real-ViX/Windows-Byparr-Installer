@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from PySide6.QtCore import QStandardPaths
+from PySide6.QtCore import QProcess, QStandardPaths
 
-from engine_controller import EngineController
+from engine_controller import EngineController, is_routine_api_probe_log_line
 
 
 def test_engine_executable_is_relative_to_application_root(tmp_path: Path):
@@ -41,3 +41,27 @@ def test_missing_engine_is_reported(qtbot, tmp_path: Path):
         assert controller.start() is False
 
     assert signal.args == ["Engine files missing"]
+
+
+def test_successful_openapi_health_poll_log_is_filtered():
+    assert is_routine_api_probe_log_line(
+        'INFO: 127.0.0.1:50000 - "GET /openapi.json HTTP/1.1" 200 OK'
+    )
+
+
+def test_failed_openapi_request_log_is_preserved():
+    assert not is_routine_api_probe_log_line(
+        'INFO: 127.0.0.1:50000 - "GET /openapi.json HTTP/1.1" 500 Internal Server Error'
+    )
+
+
+def test_engine_stop_timeout_is_cancellable(qtbot):
+    controller = EngineController()
+    assert controller._stop_timeout_timer.isSingleShot()
+    assert controller._stop_timeout_timer.interval() == 12_000
+    controller._stop_timeout_timer.start()
+    assert controller._stop_timeout_timer.isActive()
+
+    controller._on_finished(0, QProcess.NormalExit)
+
+    assert not controller._stop_timeout_timer.isActive()
