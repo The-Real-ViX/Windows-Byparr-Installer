@@ -28,6 +28,20 @@ Choose the Windows x64 installer asset for the release. Do not use an Actions bu
 
 This is beta software. Back up important configuration before installing or updating. The installer is intended for Windows 11 x64. If Windows SmartScreen displays a warning, do not bypass it unless you have independently checked that you downloaded the release from this repository and are comfortable proceeding.
 
+## Remote access over Tailscale
+
+Byparr Manager can optionally bind the Byparr API to this Windows PC's active Tailscale IPv4 address. This keeps the API off the ordinary Wi-Fi/Ethernet interfaces.
+
+1. Install and sign in to Tailscale on the Windows PC that runs Byparr.
+2. Install and sign in to Tailscale on the remote device.
+3. In Byparr Manager, open **Settings**, enable **Remote access over Tailscale**, refresh the status, and save the setting.
+4. Start or restart the Byparr engine. The Manager displays the remote address, for example `http://100.x.y.z:8191`.
+5. Configure the Tailscale access policy so only the devices/users you trust can reach TCP port 8191 on this PC.
+
+**Security:** Tailscale encrypts traffic between tailnet devices, but the Byparr API itself does not provide a Manager username/password. Anyone permitted by your tailnet policy to reach this port may be able to call the API. Do not expose port 8191 through router port forwarding or a public reverse proxy. The feature is opt-in; local-only binding remains the default. The Windows Manager must remain running because it currently supervises the engine process.
+
+If the Tailscale address is not detected, confirm that Tailscale is installed, signed in and connected on the Windows PC, then use **Refresh Tailscale status**. A change to the selected bind address takes effect when the engine next starts or restarts.
+
 ## First checks after installation
 
 1. Open Byparr Manager.
