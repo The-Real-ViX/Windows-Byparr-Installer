@@ -31,15 +31,15 @@ class ProwlarrSearchClient:
         parsed = httpx.URL(self.base_url)
         if parsed.scheme not in ("http", "https") or not parsed.host:
             raise ValueError("Invalid Prowlarr address.")
-        response = httpx.get(
-            f"{self.base_url}/api/v1/search",
-            params={"query": query, "type": "search", "limit": 50},
-            headers={"X-Api-Key": self.api_key},
-            timeout=90.0,
-        )
-        if response.status_code in (401, 403):
-            raise RuntimeError("Prowlarr rejected its API key.")
         try:
+            response = httpx.get(
+                f"{self.base_url}/api/v1/search",
+                params={"query": query, "type": "search", "limit": 50},
+                headers={"X-Api-Key": self.api_key},
+                timeout=90.0,
+            )
+            if response.status_code in (401, 403):
+                raise RuntimeError("Prowlarr rejected its API key.")
             response.raise_for_status()
             payload = response.json()
         except httpx.HTTPError as error:
