@@ -234,7 +234,7 @@ class RemoteDashboardServer:
                     )
                     return
                 if path == "/api/status":
-                    _, session = self._session()
+                    token, session = self._session()
                     if not session:
                         self._json(HTTPStatus.UNAUTHORIZED, {"error": "Sign in required"})
                         return
