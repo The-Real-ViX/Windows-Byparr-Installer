@@ -3,6 +3,7 @@
 import ipaddress
 import re
 import secrets
+import threading
 import shutil
 import sys
 from datetime import datetime
@@ -158,6 +159,7 @@ class ByparrManager(QMainWindow):
         self.remote_action_bridge.log_requested.connect(self.append_log)
         self.remote_server = None
         self.prowlarr_search_client = None
+        self._prowlarr_client_lock = threading.Lock()
         self.remote_logs = []
         self.remote_engine_status = "Stopped"
         self.remote_api_status = "Not checked"
@@ -1048,11 +1050,16 @@ class ByparrManager(QMainWindow):
             raise RuntimeError("Prowlarr API key is unavailable.") from error
         if not api_key:
             raise RuntimeError("Prowlarr API key is not saved.")
-        client = self.prowlarr_search_client
-        if client is None or client.base_url != self.prowlarr_url.rstrip("/") or client.api_key != api_key:
-            client = ProwlarrSearchClient(self.prowlarr_url, api_key)
-            self.prowlarr_search_client = client
-        return client
+        with self._prowlarr_client_lock:
+            client = self.prowlarr_search_client
+            if (
+                client is None
+                or client.base_url != self.prowlarr_url.rstrip("/")
+                or client.api_key != api_key
+            ):
+                client = ProwlarrSearchClient(self.prowlarr_url, api_key)
+                self.prowlarr_search_client = client
+            return client
 
     def remote_prowlarr_search(self, query, category="all"):
         """Search Prowlarr without exposing its API key or release URLs remotely."""
