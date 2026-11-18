@@ -55,3 +55,31 @@ def test_remote_log_redaction_masks_common_secrets():
     assert "xyz" not in result
     assert "session123" not in result
     assert result.count("[REDACTED]") == 4
+
+
+
+def test_remote_audit_events_are_sent_to_manager_log():
+    from remote_access import RemoteDashboardServer
+
+    events = []
+    server = RemoteDashboardServer(
+        "100.101.20.30", 8765, "test-user", "00" * 16, "11" * 32,
+        lambda: {}, lambda _action: None, audit_logger=events.append,
+    )
+    server.audit("Login successful for user 'test-user' from 100.101.20.30.")
+    assert events == [
+        "[REMOTE ACCESS] Login successful for user 'test-user' from 100.101.20.30."
+    ]
+
+
+def test_remote_audit_failure_does_not_break_dashboard():
+    from remote_access import RemoteDashboardServer
+
+    def broken_logger(_message):
+        raise RuntimeError("log unavailable")
+
+    server = RemoteDashboardServer(
+        "100.101.20.30", 8765, "test-user", "00" * 16, "11" * 32,
+        lambda: {}, lambda _action: None, audit_logger=broken_logger,
+    )
+    server.audit("Login successful")
