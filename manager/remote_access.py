@@ -197,11 +197,9 @@ class RemoteDashboardServer:
                 host_header = self.headers.get("Host", "")
                 if not validate_request_host(host_header, owner.host, owner.port):
                     return False
-                if require_origin and not validate_request_origin(
+                return not require_origin or validate_request_origin(
                     self.headers.get("Origin", ""), host_header
-                ):
-                    return False
-                return True
+                )
 
             def _session(self):
                 cookie = self.headers.get("Cookie", "")
