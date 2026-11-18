@@ -12,6 +12,8 @@ def test_search_uses_api_key_header_and_returns_safe_release_fields(monkeypatch)
         captured.update(kwargs)
         return httpx.Response(200, json=[{
             "title": "Example.Release.1080p",
+            "guid": "example-guid",
+            "indexerId": 7,
             "indexer": "Example Indexer",
             "size": 1073741824,
             "seeders": 42,
