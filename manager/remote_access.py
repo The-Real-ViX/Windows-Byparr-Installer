@@ -76,7 +76,7 @@ class RemoteDashboardServer:
     """Small authenticated HTTP dashboard, restricted to a configured Tailscale IP."""
 
     def __init__(self, host, port, username, salt, verifier, status_provider,
-                 action_handler, log_provider=None):
+                 action_handler, log_provider=None, audit_logger=None):
         self.host, self.port = validate_tailscale_binding(host, port)
         self.username = username
         self.salt = salt
@@ -84,9 +84,18 @@ class RemoteDashboardServer:
         self.status_provider = status_provider
         self.action_handler = action_handler
         self.log_provider = log_provider or (lambda: [])
+        self.audit_logger = audit_logger or (lambda _message: None)
         self._sessions = {}
         self._failures = {}
         self._lock = threading.Lock()
+
+    def audit(self, event):
+        """Write a credential-free security event to the Manager's normal log."""
+        try:
+            self.audit_logger(f"[REMOTE ACCESS] {event}")
+        except Exception:
+            # An audit sink failure must never break authentication or controls.
+            pass
         self._server = None
         self._thread = None
 
@@ -145,7 +154,9 @@ class RemoteDashboardServer:
                     if session and session["expires"] > time.time():
                         session["expires"] = time.time() + SESSION_SECONDS
                         return token, session
-                    owner._sessions.pop(token, None)
+                    expired = owner._sessions.pop(token, None)
+                    if expired:
+                        owner.audit(f"Session expired for user '{owner.username}'.")
                 return None, None
 
             def do_GET(self):
@@ -191,6 +202,11 @@ class RemoteDashboardServer:
                         if not valid:
                             with owner._lock:
                                 owner._failures[address].append(now)
+                            owner.audit(
+                                f"Login failed for username '{owner.username}' from {address}."
+                            )
+                        else:
+                            owner.audit(f"Login rate limit blocked {address}.")
                         self._json(401, {"error": "Sign-in failed. Check your details or wait."})
                         return
                     token = secrets.token_urlsafe(32)
@@ -200,6 +216,7 @@ class RemoteDashboardServer:
                             "csrf": csrf, "expires": now + SESSION_SECONDS
                         }
                         owner._failures.pop(address, None)
+                    owner.audit(f"Login successful for user '{owner.username}' from {address}.")
                     self._json(200, {"ok": True}, {
                         "Set-Cookie": f"byparr_session={token}; HttpOnly; SameSite=Strict; "
                                       "Path=/; Max-Age=1800"
@@ -219,6 +236,9 @@ class RemoteDashboardServer:
                 if path == "/logout":
                     with owner._lock:
                         owner._sessions.pop(token, None)
+                    owner.audit(
+                        f"Logout for user '{owner.username}' from {self.client_address[0]}."
+                    )
                     self._json(200, {"ok": True}, {
                         "Set-Cookie": "byparr_session=; HttpOnly; SameSite=Strict; "
                                       "Path=/; Max-Age=0"
@@ -229,6 +249,9 @@ class RemoteDashboardServer:
                     if action not in {"start", "stop", "restart", "browser-health", "check-integrations"}:
                         self._json(400, {"error": "Unsupported action"})
                         return
+                    owner.audit(
+                        f"User '{owner.username}' from {self.client_address[0]} requested '{action}'."
+                    )
                     owner.action_handler(action)
                     self._json(202, {"ok": True})
                     return
@@ -252,6 +275,7 @@ class RemoteDashboardServer:
             server.server_close()
         with self._lock:
             self._sessions.clear()
+        self.audit("Remote dashboard stopped; active sessions cleared.")
 
 
 def redact_log_line(value):
