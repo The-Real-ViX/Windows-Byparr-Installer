@@ -171,10 +171,17 @@ class RemoteDashboardServer:
                     if not session:
                         self._json(HTTPStatus.UNAUTHORIZED, {"error": "Sign in required"})
                         return
-                    status = owner.status_provider()
-                    status["logs"] = [
-                        redact_log_line(line) for line in owner.log_provider()
-                    ]
+                    try:
+                        status = owner.status_provider()
+                        status["logs"] = [
+                            redact_log_line(line) for line in owner.log_provider()
+                        ]
+                    except Exception as error:
+                        owner.audit(
+                            f"Dashboard status request failed: {type(error).__name__}."
+                        )
+                        self._json(500, {"error": "Windows Manager could not prepare dashboard status."})
+                        return
                     self._json(200, status, {"X-CSRF-Token": session["csrf"]})
                     return
                 self._json(HTTPStatus.NOT_FOUND, {"error": "Not found"})
@@ -332,15 +339,18 @@ overflow-wrap:anywhere;color:#b8c5d8;max-height:360px;overflow:auto}</style>
 <button onclick="act('check-integrations')">Check Prowlarr + qBittorrent</button></section>
 <section class="panel"><h2>Recent logs</h2>
 <pre id="logs">Loading…</pre></section><button onclick="logout()">Sign out</button>
-</main><script>let csrf='';async function refresh(){const r=await fetch('/api/status');
-if(r.status===401){location.reload();return}const d=await r.json();csrf=r.headers.get('X-CSRF-Token')||csrf;
+</main><script>let csrf='';async function refresh(){try{const r=await fetch('/api/status',{cache:'no-store',credentials:'same-origin'});
+if(r.status===401){location.reload();return}const d=await r.json();if(!r.ok)throw new Error(d.error||('HTTP '+r.status));csrf=r.headers.get('X-CSRF-Token')||csrf;
 document.querySelector('#engine').textContent=d.engine||'Unknown';
 document.querySelector('#api').textContent=d.api||'';
 document.querySelector('#browser').textContent='Browser health: '+(d.browser||'Not checked');
 document.querySelector('#prowlarr').textContent='Prowlarr: '+(d.prowlarr||'Not checked');
 document.querySelector('#qbittorrent').textContent='qBittorrent: '+(d.qbittorrent||'Not checked');
-document.querySelector('#logs').textContent=(d.logs||[]).join('\n');}
-async function act(action){await fetch('/api/action',{method:'POST',headers:{
-'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action})});
-setTimeout(refresh,700)}async function logout(){await fetch('/logout',{method:'POST',
-headers:{'X-CSRF-Token':csrf}});location.reload()}refresh();setInterval(refresh,5000);</script></html>"""
+document.querySelector('#logs').textContent=(Array.isArray(d.logs)?d.logs:[]).join('\n');
+}catch(error){const message='Dashboard data unavailable: '+(error&&error.message?error.message:'network or browser error');
+document.querySelector('#engine').textContent=message;document.querySelector('#api').textContent='Check that the Windows Manager is still running and remote access is enabled.';
+document.querySelector('#logs').textContent=message;}}
+async function act(action){try{const r=await fetch('/api/action',{method:'POST',credentials:'same-origin',headers:{
+'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action})});if(!r.ok)throw new Error('HTTP '+r.status);setTimeout(refresh,700)}
+catch(error){document.querySelector('#engine').textContent='Action failed: '+error.message;}}
+async function logout(){await fetch('/logout',{method:'POST',credentials:'same-origin',headers:{'X-CSRF-Token':csrf}});location.reload()}refresh();setInterval(refresh,5000);</script></html>"""
