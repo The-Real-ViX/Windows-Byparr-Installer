@@ -72,8 +72,12 @@ def verify_password(password: str, salt_hex: str, verifier_hex: str) -> bool:
         return False
     if len(salt) != 16 or len(expected) != 32:
         return False
+    try:
+        encoded = password.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
     actual = hashlib.pbkdf2_hmac(
-        "sha256", password.encode("utf-8"), salt, PASSWORD_ITERATIONS
+        "sha256", encoded, salt, PASSWORD_ITERATIONS
     )
     return hmac.compare_digest(actual, expected)
 
@@ -149,6 +153,10 @@ class RemoteDashboardServer:
             server_version = "ByparrManagerRemote"
             sys_version = ""
 
+            def setup(self):
+                super().setup()
+                self.connection.settimeout(10)
+
             def log_message(self, _format, *_args):
                 return
 
@@ -161,10 +169,12 @@ class RemoteDashboardServer:
                 self.send_header("X-Content-Type-Options", "nosniff")
                 self.send_header("X-Frame-Options", "DENY")
                 self.send_header("Referrer-Policy", "no-referrer")
+                self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
                 if not (headers and "Content-Security-Policy" in headers):
                     self.send_header("Content-Security-Policy",
                                      "default-src 'self'; script-src 'self'; "
-                                     "style-src 'self' 'unsafe-inline'; frame-ancestors 'none'")
+                                     "style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; "
+                                     "base-uri 'none'; object-src 'none'; form-action 'self'")
                 self.send_header("Cache-Control", "no-store")
                 for key, value in (headers or {}).items():
                     self.send_header(key, value)
@@ -175,8 +185,10 @@ class RemoteDashboardServer:
                 self._send(status, json.dumps(payload), headers=headers)
 
             def _body(self):
-                raw_length = self.headers.get("Content-Length", "0")
-                if not raw_length.isdigit():
+                raw_length = self.headers.get("Content-Length")
+                if self.headers.get("Transfer-Encoding") is not None:
+                    return None
+                if raw_length is None or not raw_length.isdigit():
                     return None
                 length = int(raw_length)
                 if length < 0 or length > 8192:
@@ -185,12 +197,12 @@ class RemoteDashboardServer:
                     return {}
                 if self.headers.get_content_type() != "application/json":
                     return None
-                raw = self.rfile.read(length)
-                if len(raw) != length:
-                    return None
                 try:
+                    raw = self.rfile.read(length)
+                    if len(raw) != length:
+                        return None
                     return json.loads(raw)
-                except (UnicodeDecodeError, json.JSONDecodeError):
+                except (OSError, UnicodeDecodeError, json.JSONDecodeError):
                     return None
 
             def _trusted_request(self, require_origin=False):
@@ -207,14 +219,20 @@ class RemoteDashboardServer:
                               for part in cookie.split(";")
                               if part.strip().startswith("byparr_session=")), "")
                 with owner._lock:
+                    now = time.time()
+                    owner._sessions = {
+                        key: value for key, value in owner._sessions.items()
+                        if value["expires"] > now
+                    }
                     session = owner._sessions.get(token)
-                    if session and session["expires"] > time.time():
-                        session["expires"] = time.time() + SESSION_SECONDS
+                    if session and session.get("client") == self.client_address[0]:
+                        session["expires"] = now + SESSION_SECONDS
                         return token, session
-                    expired = owner._sessions.pop(token, None)
-                    if expired:
+                    invalidated = owner._sessions.pop(token, None)
+                    if invalidated:
+                        reason = "client address changed" if invalidated.get("client") != self.client_address[0] else "session expired"
                         owner.audit(
-                            f"Session expired for user '{owner.username}' "
+                            f"Session invalidated ({reason}) for user '{owner.username}' "
                             f"from {self.client_address[0]}."
                         )
                 return None, None
@@ -233,7 +251,8 @@ class RemoteDashboardServer:
                         200, page, "text/html",
                         {"Content-Security-Policy":
                          f"default-src 'self'; script-src 'self' 'nonce-{nonce}'; "
-                         "style-src 'self' 'unsafe-inline'; frame-ancestors 'none'"},
+                         "style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; "
+                         "base-uri 'none'; object-src 'none'; form-action 'self'"},
                     )
                     return
                 if path == "/api/status":
@@ -274,9 +293,29 @@ class RemoteDashboardServer:
                     address = self.client_address[0]
                     now = time.time()
                     with owner._lock:
-                        failures = [stamp for stamp in owner._failures.get(address, [])
-                                    if now - stamp < 300]
-                        owner._failures[address] = failures
+                        # Count attempts before PBKDF2 so parallel requests cannot
+                        # bypass the per-address limit and consume CPU indefinitely.
+                        failures = [
+                            stamp for stamp in owner._failures.get(address, [])
+                            if now - stamp < 300
+                        ]
+                        if len(failures) >= 5:
+                            owner._failures[address] = failures
+                            blocked = True
+                        else:
+                            failures.append(now)
+                            owner._failures[address] = failures
+                            blocked = False
+                        if len(owner._failures) > 1024:
+                            owner._failures = {
+                                key: stamps for key, stamps in owner._failures.items()
+                                if stamps and now - stamps[-1] < 300
+                            }
+                    if blocked:
+                        owner.audit(f"Login rate limit blocked {address}.")
+                        self._json(HTTPStatus.TOO_MANY_REQUESTS,
+                                   {"error": "Too many sign-in attempts. Wait five minutes and try again."})
+                        return
                     attempted_username = payload.get("username", "")
                     if not isinstance(attempted_username, str):
                         attempted_username = ""
@@ -290,17 +329,10 @@ class RemoteDashboardServer:
                         attempted_password, owner.salt, owner.verifier
                     )
                     valid = attempted_username == owner.username and password_ok
-                    if not valid or len(failures) >= 5:
-                        if not valid:
-                            with owner._lock:
-                                owner._failures[address] = (
-                                    owner._failures.get(address, []) + [now]
-                                )[-5:]
-                            owner.audit(
-                                f"Login failed for username '{attempted_username}' from {address}."
-                            )
-                        else:
-                            owner.audit(f"Login rate limit blocked {address}.")
+                    if not valid:
+                        owner.audit(
+                            f"Login failed for username '{attempted_username}' from {address}."
+                        )
                         self._json(401, {"error": "Sign-in failed. Check your details or wait."})
                         return
                     token = secrets.token_urlsafe(32)
@@ -316,7 +348,8 @@ class RemoteDashboardServer:
                                        {"error": "Too many active sessions. Sign out elsewhere first."})
                             return
                         owner._sessions[token] = {
-                            "csrf": csrf, "expires": now + SESSION_SECONDS
+                            "csrf": csrf, "expires": now + SESSION_SECONDS,
+                            "client": address,
                         }
                         owner._failures.pop(address, None)
                     owner.audit(f"Login successful for user '{owner.username}' from {address}.")
