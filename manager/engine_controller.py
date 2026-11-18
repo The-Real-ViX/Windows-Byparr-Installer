@@ -28,6 +28,7 @@ class EngineController(QObject):
             Path(application_root) if application_root else self._application_root()
         )
         self.port = 8191
+        self.host = "127.0.0.1"
         self._status = "Stopped"
         self._restart_after_stop = False
 
@@ -88,7 +89,7 @@ class EngineController(QObject):
             return False
 
         environment = QProcessEnvironment.systemEnvironment()
-        environment.insert("HOST", "127.0.0.1")
+        environment.insert("HOST", self.host)
         environment.insert("PORT", str(self.port))
         environment.insert("INVISIBLE_PLAYWRIGHT_ENGINE_DIR", str(self.browser_engine_path))
         environment.insert("INVISIBLE_PLAYWRIGHT_CACHE_DIR", str(self.browser_cache_path))
@@ -137,7 +138,7 @@ class EngineController(QObject):
             return
         try:
             response = httpx.get(
-                f"http://127.0.0.1:{self.port}/openapi.json",
+                f"http://{self.host}:{self.port}/openapi.json",
                 timeout=0.4,
             )
             if response.status_code == 200:
