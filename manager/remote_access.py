@@ -192,7 +192,6 @@ class RemoteDashboardServer:
                     return None
 
             def _trusted_request(self, require_origin=False):
-                expected_host = f"[{owner.host}]:{owner.port}" if ":" in owner.host else f"{owner.host}:{owner.port}"
                 host_header = self.headers.get("Host", "")
                 if not validate_request_host(host_header, owner.host, owner.port):
                     return False
