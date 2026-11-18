@@ -85,7 +85,7 @@ class RemoteDashboardServer:
         self.action_handler = action_handler
         self.log_provider = log_provider or (lambda: [])
         self.audit_logger = audit_logger or (lambda _message: None)
-        self.search_handler = search_handler or (lambda _query: [])
+        self.search_handler = search_handler or (lambda _query, _category: [])
         self._searches = []
         self._sessions = {}
         self._failures = {}
@@ -264,7 +264,7 @@ class RemoteDashboardServer:
                         "audio": "Audio / Music", "books": "Books",
                         "pc": "PC", "console": "Console",
                     }
-                    if category not in category_labels:
+                    if not isinstance(category, str) or category not in category_labels:
                         self._json(400, {"error": "Choose a valid search category."})
                         return
                     try:
