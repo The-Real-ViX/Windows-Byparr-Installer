@@ -88,6 +88,8 @@ class RemoteDashboardServer:
         self._sessions = {}
         self._failures = {}
         self._lock = threading.Lock()
+        self._server = None
+        self._thread = None
 
     def audit(self, event):
         """Write a credential-free security event to the Manager's normal log."""
@@ -96,8 +98,6 @@ class RemoteDashboardServer:
         except Exception:
             # An audit sink failure must never break authentication or controls.
             pass
-        self._server = None
-        self._thread = None
 
     @property
     def running(self):
