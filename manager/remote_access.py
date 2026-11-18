@@ -368,7 +368,12 @@ padding:11px 16px;border-radius:7px;margin:4px;cursor:pointer}pre{white-space:pr
 overflow-wrap:anywhere;color:#b8c5d8;max-height:360px;overflow:auto}
 input{box-sizing:border-box;width:100%;padding:13px;border-radius:7px;border:1px solid #35445b;background:#131a25;color:#fff}
 .result{border-top:1px solid #2b3749;padding:12px 0}.result strong{display:block;overflow-wrap:anywhere}
-.muted{color:#9aa7ba;font-size:13px}#search-message{color:#9aa7ba}</style>
+.muted{color:#9aa7ba;font-size:13px}#search-message{color:#9aa7ba;min-height:20px}
+button:disabled{opacity:.55;cursor:wait}.search-status{display:flex;align-items:center;gap:10px}
+.spinner{width:17px;height:17px;border:3px solid #52617a;border-top-color:#8daaff;border-radius:50%;
+box-sizing:border-box;animation:spin .8s linear infinite;flex:none}.spinner[hidden]{display:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.spinner{animation:none;border-top-color:#8daaff}}</style>
 <main><h1>BYPARR MANAGER</h1><p>Private remote dashboard</p><section class="panel">
 <h2>Engine</h2><p id="updated" aria-live="polite">Waiting for live status…</p><p id="engine" aria-live="polite">Loading…</p><p id="api"></p><p id="browser"></p>
 <p id="prowlarr"></p><p id="qbittorrent"></p>
@@ -378,7 +383,9 @@ input{box-sizing:border-box;width:100%;padding:13px;border-radius:7px;border:1px
 <section class="panel"><h2>Prowlarr Search</h2>
 <p class="muted">Search your configured Prowlarr indexers and view results here on your iPad.</p>
 <form id="search-form"><input id="search-query" name="query" minlength="2" maxlength="120" placeholder="Enter a title or search term" required>
-<button type="submit">Search Prowlarr</button></form><p id="search-message" aria-live="polite">Search results will appear here.</p>
+<button id="search-button" type="submit">Search Prowlarr</button></form>
+<div class="search-status"><span id="search-spinner" class="spinner" hidden aria-hidden="true"></span>
+<p id="search-message" role="status" aria-live="polite" aria-atomic="true">Search results will appear here.</p></div>
 <div id="search-results"></div><h3>Recent searches</h3><div id="search-history" class="muted">No searches yet.</div>
 </section>
 <section class="panel"><h2>Recent logs</h2>
@@ -408,14 +415,29 @@ function renderSearchHistory(items){const target=document.querySelector('#search
 if(!Array.isArray(items)||!items.length){target.textContent='No searches yet.';return;}
 for(const item of [...items].reverse()){const b=document.createElement('button');b.type='button';b.textContent=item.query+' ('+item.count+')';
 b.addEventListener('click',()=>{document.querySelector('#search-query').value=item.query;renderSearchResults(item);document.querySelector('#search-message').textContent='Previous results · '+item.searched_at;});target.appendChild(b);}}
+let searchInFlight=false;let searchTimer=null;let searchStartedAt=0;
+function elapsedSearchSeconds(){return Math.max(0,Math.floor((Date.now()-searchStartedAt)/1000));}
+function setSearchMessage(text){document.querySelector('#search-message').textContent=text;}
 document.querySelector('#search-form').addEventListener('submit',async event=>{event.preventDefault();
-const query=document.querySelector('#search-query').value.trim();const message=document.querySelector('#search-message');
-if(!csrf){message.textContent='Connecting to the dashboard…';return;}
-message.textContent='Searching Prowlarr…';try{const r=await fetch('/api/search',{method:'POST',credentials:'same-origin',
+if(searchInFlight)return;
+const query=document.querySelector('#search-query').value.trim();
+if(query.length<2){setSearchMessage('Enter at least 2 characters.');return;}
+if(!csrf){setSearchMessage('Connecting to the dashboard… please try again in a moment.');return;}
+searchInFlight=true;searchStartedAt=Date.now();
+const button=document.querySelector('#search-button');const spinner=document.querySelector('#search-spinner');
+button.disabled=true;button.textContent='Searching…';spinner.hidden=false;
+document.querySelector('#search-results').setAttribute('aria-busy','true');
+setSearchMessage('Searching Prowlarr… 0s elapsed. Some indexers take longer while Byparr handles challenges.');
+searchTimer=setInterval(()=>{const seconds=elapsedSearchSeconds();
+setSearchMessage(seconds<15?'Searching Prowlarr… '+seconds+'s elapsed.':'Still searching… '+seconds+'s elapsed. Some indexers take longer while Byparr handles challenges. Keep this page open.');},1000);
+try{const r=await fetch('/api/search',{method:'POST',credentials:'same-origin',
 headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({query})});
 const data=await r.json();if(!r.ok)throw new Error(data.error||('HTTP '+r.status));
-renderSearchResults(data);message.textContent='Found '+data.count+' results for “'+data.query+'”.';
-}catch(error){message.textContent='Search failed: '+error.message;renderSearchResults(null);}});
+renderSearchResults(data);setSearchMessage('Found '+data.count+' results for “'+data.query+'” in '+elapsedSearchSeconds()+'s.');
+}catch(error){setSearchMessage('Search failed after '+elapsedSearchSeconds()+'s: '+error.message+' You can try again.');}
+finally{if(searchTimer!==null){clearInterval(searchTimer);searchTimer=null;}
+searchInFlight=false;button.disabled=false;button.textContent='Search Prowlarr';spinner.hidden=true;
+document.querySelector('#search-results').removeAttribute('aria-busy');}});
 async function act(action){try{const r=await fetch('/api/action',{method:'POST',credentials:'same-origin',headers:{
 'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action})});if(!r.ok)throw new Error('HTTP '+r.status);setTimeout(refresh,700)}
 catch(error){document.querySelector('#engine').textContent='Action failed: '+error.message;}}
