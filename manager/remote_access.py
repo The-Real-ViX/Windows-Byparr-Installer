@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import html
 import ipaddress
 import json
+import re
 import secrets
 import threading
 import time
@@ -160,7 +160,9 @@ class RemoteDashboardServer:
                         self._json(HTTPStatus.UNAUTHORIZED, {"error": "Sign in required"})
                         return
                     status = owner.status_provider()
-                    status["logs"] = owner.log_provider()
+                    status["logs"] = [
+                        redact_log_line(line) for line in owner.log_provider()
+                    ]
                     self._json(200, status, {"X-CSRF-Token": session["csrf"]})
                     return
                 self._json(HTTPStatus.NOT_FOUND, {"error": "Not found"})
@@ -231,7 +233,12 @@ class RemoteDashboardServer:
                     return
                 self._json(HTTPStatus.NOT_FOUND, {"error": "Not found"})
 
-        self._server = ThreadingHTTPServer((self.host, self.port), Handler)
+        server_type = ThreadingHTTPServer
+        if ":" in self.host:
+            class IPv6ThreadingHTTPServer(ThreadingHTTPServer):
+                address_family = 10  # socket.AF_INET6
+            server_type = IPv6ThreadingHTTPServer
+        self._server = server_type((self.host, self.port), Handler)
         self._server.daemon_threads = True
         self._thread = threading.Thread(target=self._server.serve_forever,
                                         name="ByparrRemoteDashboard", daemon=True)
@@ -244,6 +251,17 @@ class RemoteDashboardServer:
             server.server_close()
         with self._lock:
             self._sessions.clear()
+
+
+def redact_log_line(value):
+    """Mask common credential fields before logs leave the Windows desktop."""
+    line = str(value)
+    line = re.sub(
+        r"(?i)(api[_-]?key|password|token|cookie|authorization)(\s*[:=]\s*)[^\s,;]+",
+        r"\1\2[REDACTED]",
+        line,
+    )
+    return line[:2000]
 
 
 LOGIN_PAGE = """<!doctype html><html lang="en"><meta charset="utf-8">
