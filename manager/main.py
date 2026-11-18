@@ -157,6 +157,7 @@ class ByparrManager(QMainWindow):
         self.remote_action_bridge.requested.connect(self.handle_remote_action)
         self.remote_action_bridge.log_requested.connect(self.append_log)
         self.remote_server = None
+        self.prowlarr_search_client = None
         self.remote_logs = []
         self.remote_engine_status = "Stopped"
         self.remote_api_status = "Not checked"
@@ -1039,15 +1040,27 @@ class ByparrManager(QMainWindow):
         outer_layout.addWidget(scroll, 1)
         return page
 
-    def remote_prowlarr_search(self, query, category="all"):
-        """Run a read-only, category-filtered Prowlarr search without exposing its API key remotely."""
+    def _remote_prowlarr_client(self):
+        """Reuse the search client so opaque result handles remain valid for grabs."""
         try:
             api_key = self.secret_store.get("prowlarr")
         except SecretStorageError as error:
             raise RuntimeError("Prowlarr API key is unavailable.") from error
         if not api_key:
             raise RuntimeError("Prowlarr API key is not saved.")
-        return ProwlarrSearchClient(self.prowlarr_url, api_key).search(query, category)
+        client = self.prowlarr_search_client
+        if client is None or client.base_url != self.prowlarr_url.rstrip("/") or client.api_key != api_key:
+            client = ProwlarrSearchClient(self.prowlarr_url, api_key)
+            self.prowlarr_search_client = client
+        return client
+
+    def remote_prowlarr_search(self, query, category="all"):
+        """Search Prowlarr without exposing its API key or release URLs remotely."""
+        return self._remote_prowlarr_client().search(query, category)
+
+    def remote_prowlarr_grab(self, grab_id):
+        """Send a selected release to the download client configured inside Prowlarr."""
+        return self._remote_prowlarr_client().grab(grab_id)
 
     def remote_status_snapshot(self):
         return {
@@ -1094,6 +1107,7 @@ class ByparrManager(QMainWindow):
                 lambda: self.remote_logs[-100:],
                 self.remote_action_bridge.log_requested.emit,
                 search_handler=self.remote_prowlarr_search,
+            grab_handler=self.remote_prowlarr_grab,
             )
             self.remote_server.start()
         except (ValueError, OSError) as error:
