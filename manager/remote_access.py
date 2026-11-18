@@ -534,7 +534,8 @@ box-sizing:border-box;animation:spin .8s linear infinite;flex:none}.spinner[hidd
 <option value="console">Console</option></select>
 <label for="search-query">Search term</label>
 <input id="search-query" name="query" minlength="2" maxlength="120" placeholder="Enter a title or search term" required>
-<button id="search-button" type="submit">Search Prowlarr</button></form>
+<button id="search-button" type="submit">Search Prowlarr</button>
+<button id="clear-search" type="button">Clear Search</button></form>
 <div class="search-status"><span id="search-spinner" class="spinner" hidden aria-hidden="true"></span>
 <p id="search-message" role="status" aria-live="polite" aria-atomic="true">Search results will appear here.</p></div>
 <div id="search-results"></div><h3>Recent searches</h3><div id="search-history" class="muted">No searches yet.</div>
@@ -584,6 +585,16 @@ finally{grabInFlight=false;}}
 let searchInFlight=false;let searchTimer=null;let searchStartedAt=0;
 function elapsedSearchSeconds(){return Math.max(0,Math.floor((Date.now()-searchStartedAt)/1000));}
 function setSearchMessage(text){document.querySelector('#search-message').textContent=text;}
+document.querySelector('#clear-search').addEventListener('click',()=>{
+if(searchInFlight)return;
+document.querySelector('#search-query').value='';
+document.querySelector('#search-category').value='all';
+document.querySelector('#search-results').replaceChildren();
+document.querySelector('#search-results').removeAttribute('aria-busy');
+document.querySelector('#search-spinner').hidden=true;
+setSearchMessage('Search cleared. Enter a new search when ready.');
+document.querySelector('#search-query').focus();
+});
 document.querySelector('#search-form').addEventListener('submit',async event=>{event.preventDefault();
 if(searchInFlight)return;
 const query=document.querySelector('#search-query').value.trim();
@@ -591,8 +602,8 @@ const category=document.querySelector('#search-category').value;
 if(query.length<2){setSearchMessage('Enter at least 2 characters.');return;}
 if(!csrf){setSearchMessage('Connecting to the dashboard… please try again in a moment.');return;}
 searchInFlight=true;searchStartedAt=Date.now();
-const button=document.querySelector('#search-button');const spinner=document.querySelector('#search-spinner');
-button.disabled=true;button.textContent='Searching…';spinner.hidden=false;
+const button=document.querySelector('#search-button');const clearButton=document.querySelector('#clear-search');const spinner=document.querySelector('#search-spinner');
+button.disabled=true;clearButton.disabled=true;button.textContent='Searching…';spinner.hidden=false;
 document.querySelector('#search-results').setAttribute('aria-busy','true');
 setSearchMessage('Searching Prowlarr… 0s elapsed. Some indexers take longer while Byparr handles challenges.');
 searchTimer=setInterval(()=>{const seconds=elapsedSearchSeconds();
@@ -603,7 +614,7 @@ const data=await r.json();if(!r.ok)throw new Error(data.error||('HTTP '+r.status
 renderSearchResults(data);setSearchMessage('Found '+data.count+' '+(data.category_label||'All')+' results for “'+data.query+'” in '+elapsedSearchSeconds()+'s.');
 }catch(error){setSearchMessage('Search failed after '+elapsedSearchSeconds()+'s: '+error.message+' You can try again.');}
 finally{if(searchTimer!==null){clearInterval(searchTimer);searchTimer=null;}
-searchInFlight=false;button.disabled=false;button.textContent='Search Prowlarr';spinner.hidden=true;
+searchInFlight=false;button.disabled=false;clearButton.disabled=false;button.textContent='Search Prowlarr';spinner.hidden=true;
 document.querySelector('#search-results').removeAttribute('aria-busy');}});
 async function act(action){try{const r=await fetch('/api/action',{method:'POST',credentials:'same-origin',headers:{
 'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action})});if(!r.ok)throw new Error('HTTP '+r.status);setTimeout(refresh,700)}
