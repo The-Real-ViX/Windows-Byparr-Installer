@@ -250,7 +250,11 @@ class RemoteDashboardServer:
                         )
                         self._json(500, {"error": "Windows Manager could not prepare dashboard status."})
                         return
-                    self._json(200, status, {"X-CSRF-Token": session["csrf"]})
+                    self._json(200, status, {
+                        "X-CSRF-Token": session["csrf"],
+                        "Set-Cookie": f"byparr_session={token}; HttpOnly; SameSite=Strict; "
+                                      f"Path=/; Max-Age={SESSION_SECONDS}",
+                    })
                     return
                 self._json(HTTPStatus.NOT_FOUND, {"error": "Not found"})
 
@@ -273,8 +277,8 @@ class RemoteDashboardServer:
                     attempted_username = payload.get("username", "")
                     if not isinstance(attempted_username, str):
                         attempted_username = ""
-                    attempted_username = "".join(
-                        char for char in attempted_username[:64] if char.isprintable()
+                    attempted_username = re.sub(
+                        r"[^A-Za-z0-9_.@-]", "?", attempted_username[:64]
                     )
                     attempted_password = payload.get("password", "")
                     if not isinstance(attempted_password, str):
