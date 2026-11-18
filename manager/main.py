@@ -1021,12 +1021,25 @@ class ByparrManager(QMainWindow):
         return page
 
     def remote_status_snapshot(self):
-        return {"engine": self.remote_engine_status, "api": f"Local Byparr API: {api_endpoint(self.api_host, self.api_port)}"}
+        return {
+            "engine": self.remote_engine_status,
+            "api": f"Local Byparr API: {api_endpoint(self.api_host, self.api_port)}",
+            "browser": self.browser_health_status.text(),
+            "prowlarr": self.prowlarr_connection_status.text(),
+            "qbittorrent": self.qbittorrent_connection_status.text(),
+        }
 
     def handle_remote_action(self, action):
-        if action == "start": self.start_engine()
-        elif action == "stop": self.stop_engine()
-        elif action == "restart": self.restart_engine()
+        if action == "start":
+            self.start_engine()
+        elif action == "stop":
+            self.stop_engine()
+        elif action == "restart":
+            self.restart_engine()
+        elif action == "browser-health":
+            self.check_browser_health()
+        elif action == "check-integrations":
+            self.check_prowlarr_integration()
 
     def start_remote_access(self):
         if self.remote_server and self.remote_server.running: return
