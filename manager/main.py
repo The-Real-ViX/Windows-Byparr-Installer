@@ -745,7 +745,10 @@ class ByparrManager(QMainWindow):
     def update_integration_metric(self):
         """Show saved credentials, without implying the services are connected."""
         saved = []
-        for integration_id, name in (("prowlarr", "Prowlarr"), ("jackett", "Jackett")):
+        for integration_id, name in (
+            ("prowlarr", "Prowlarr"), ("jackett", "Jackett"),
+            ("radarr", "Radarr"), ("sonarr", "Sonarr"), ("lidarr", "Lidarr"),
+        ):
             try:
                 if self.secret_store.get(integration_id):
                     saved.append(name)
