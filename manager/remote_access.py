@@ -192,8 +192,14 @@ class RemoteDashboardServer:
                         failures = [stamp for stamp in owner._failures.get(address, [])
                                     if now - stamp < 300]
                         owner._failures[address] = failures
+                    attempted_username = payload.get("username", "")
+                    if not isinstance(attempted_username, str):
+                        attempted_username = ""
+                    attempted_username = "".join(
+                        char for char in attempted_username[:64] if char.isprintable()
+                    )
                     valid = (
-                        payload.get("username") == owner.username
+                        attempted_username == owner.username
                         and isinstance(payload.get("password"), str)
                         and verify_password(payload["password"], owner.salt,
                                             owner.verifier)
@@ -203,7 +209,7 @@ class RemoteDashboardServer:
                             with owner._lock:
                                 owner._failures[address].append(now)
                             owner.audit(
-                                f"Login failed for username '{owner.username}' from {address}."
+                                f"Login failed for username '{attempted_username}' from {address}."
                             )
                         else:
                             owner.audit(f"Login rate limit blocked {address}.")
