@@ -126,3 +126,9 @@ def test_grab_rejects_expired_or_unknown_result():
     client = ProwlarrSearchClient("http://127.0.0.1:9696", "key")
     with pytest.raises(ValueError, match="expired"):
         client.grab("unknown-result-handle")
+    client._releases["expired-result-handle"] = {
+        "release": {"guid": "old"}, "expires": 0
+    }
+    with pytest.raises(ValueError, match="expired"):
+        client.grab("expired-result-handle")
+    assert "expired-result-handle" not in client._releases
