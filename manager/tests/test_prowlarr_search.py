@@ -42,7 +42,7 @@ def test_search_rejects_non_list_response(monkeypatch):
     def fake_get(url, **kwargs):
         return httpx.Response(200, json={"error": "bad"}, request=httpx.Request("GET", url))
     monkeypatch.setattr(httpx, "get", fake_get)
-    with pytest.raises(ValueError, match="Unexpected"):
+    with pytest.raises(TypeError, match="Unexpected"):
         ProwlarrSearchClient("http://127.0.0.1:9696", "key").search("example")
 
 
