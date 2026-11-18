@@ -306,6 +306,9 @@ overflow-wrap:anywhere;color:#b8c5d8;max-height:360px;overflow:auto}</style>
 if(r.status===401){location.reload();return}const d=await r.json();csrf=r.headers.get('X-CSRF-Token')||csrf;
 document.querySelector('#engine').textContent=d.engine||'Unknown';
 document.querySelector('#api').textContent=d.api||'';
+document.querySelector('#browser').textContent='Browser health: '+(d.browser||'Not checked');
+document.querySelector('#prowlarr').textContent='Prowlarr: '+(d.prowlarr||'Not checked');
+document.querySelector('#qbittorrent').textContent='qBittorrent: '+(d.qbittorrent||'Not checked');
 document.querySelector('#logs').textContent=(d.logs||[]).join('\n');}
 async function act(action){await fetch('/api/action',{method:'POST',headers:{
 'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action})});
