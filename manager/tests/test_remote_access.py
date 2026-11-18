@@ -118,6 +118,12 @@ def test_remote_dashboard_contains_prowlarr_search_panel():
     from remote_access import DASHBOARD
 
     assert "Prowlarr Search" in DASHBOARD
+    assert 'id="radarr"' in DASHBOARD
+    assert 'id="sonarr"' in DASHBOARD
+    assert 'id="lidarr"' in DASHBOARD
+    assert "d.radarr||'Not configured'" in DASHBOARD
+    assert "d.sonarr||'Not configured'" in DASHBOARD
+    assert "d.lidarr||'Not configured'" in DASHBOARD
     assert "search-form" in DASHBOARD
     assert 'id="clear-search"' in DASHBOARD
     assert "Search cleared. Enter a new search when ready." in DASHBOARD
