@@ -76,7 +76,7 @@ class RemoteDashboardServer:
     """Small authenticated HTTP dashboard, restricted to a configured Tailscale IP."""
 
     def __init__(self, host, port, username, salt, verifier, status_provider,
-                 action_handler, log_provider=None, audit_logger=None):
+                 action_handler, log_provider=None, audit_logger=None, search_handler=None):
         self.host, self.port = validate_tailscale_binding(host, port)
         self.username = username
         self.salt = salt
@@ -85,6 +85,8 @@ class RemoteDashboardServer:
         self.action_handler = action_handler
         self.log_provider = log_provider or (lambda: [])
         self.audit_logger = audit_logger or (lambda _message: None)
+        self.search_handler = search_handler or (lambda _query: [])
+        self._searches = []
         self._sessions = {}
         self._failures = {}
         self._lock = threading.Lock()
@@ -176,6 +178,7 @@ class RemoteDashboardServer:
                         status["logs"] = [
                             redact_log_line(line) for line in owner.log_provider()
                         ]
+                        status["searches"] = owner._searches[-10:]
                     except (RuntimeError, OSError, ValueError, TypeError) as error:
                         owner.audit(
                             f"Dashboard status request failed: {type(error).__name__}."
@@ -246,6 +249,38 @@ class RemoteDashboardServer:
                     self._json(403, {"error": "Request verification failed"})
                     return
                 payload = self._body()
+                if path == "/api/search":
+                    query = payload.get("query") if isinstance(payload, dict) else None
+                    if not isinstance(query, str):
+                        self._json(400, {"error": "Enter a search term."})
+                        return
+                    query = query.strip()
+                    if len(query) < 2 or len(query) > 120 or any(ord(c) < 32 for c in query):
+                        self._json(400, {"error": "Search terms must be 2–120 characters."})
+                        return
+                    try:
+                        results = owner.search_handler(query)
+                        if not isinstance(results, list):
+                            raise ValueError("Unexpected search response")
+                    except (RuntimeError, OSError, ValueError, TypeError):
+                        owner.audit(
+                            f"Prowlarr search failed for user '{owner.username}' from {self.client_address[0]}."
+                        )
+                        self._json(502, {"error": "Prowlarr search failed. Check the Prowlarr connection and API key."})
+                        return
+                    entry = {
+                        "query": query,
+                        "count": len(results),
+                        "results": results[:50],
+                        "searched_at": time.strftime("%H:%M:%S"),
+                    }
+                    owner._searches.append(entry)
+                    owner._searches = owner._searches[-10:]
+                    owner.audit(
+                        f"Prowlarr search completed for user '{owner.username}' from {self.client_address[0]} ({len(results)} results)."
+                    )
+                    self._json(200, entry)
+                    return
                 if path == "/logout":
                     with owner._lock:
                         owner._sessions.pop(token, None)
@@ -330,13 +365,22 @@ body{margin:0;background:#10141c;color:#edf2fb;font:15px Arial;padding:24px}
 main{max-width:900px;margin:auto}h1{color:#8daaff}.panel{background:#1a2230;border:1px solid #2b3749;
 border-radius:12px;padding:20px;margin:16px 0}button{background:#4169e1;color:white;border:0;
 padding:11px 16px;border-radius:7px;margin:4px;cursor:pointer}pre{white-space:pre-wrap;
-overflow-wrap:anywhere;color:#b8c5d8;max-height:360px;overflow:auto}</style>
+overflow-wrap:anywhere;color:#b8c5d8;max-height:360px;overflow:auto}
+input{box-sizing:border-box;width:100%;padding:13px;border-radius:7px;border:1px solid #35445b;background:#131a25;color:#fff}
+.result{border-top:1px solid #2b3749;padding:12px 0}.result strong{display:block;overflow-wrap:anywhere}
+.muted{color:#9aa7ba;font-size:13px}#search-message{color:#9aa7ba}</style>
 <main><h1>BYPARR MANAGER</h1><p>Private remote dashboard</p><section class="panel">
 <h2>Engine</h2><p id="updated" aria-live="polite">Waiting for live status…</p><p id="engine" aria-live="polite">Loading…</p><p id="api"></p><p id="browser"></p>
 <p id="prowlarr"></p><p id="qbittorrent"></p>
 <button onclick="act('start')">Start engine</button><button onclick="act('restart')">Restart</button>
 <button onclick="act('stop')">Stop</button><button onclick="act('browser-health')">Browser Health</button>
 <button onclick="act('check-integrations')">Check Prowlarr + qBittorrent</button></section>
+<section class="panel"><h2>Prowlarr Search</h2>
+<p class="muted">Search your configured Prowlarr indexers and view results here on your iPad.</p>
+<form id="search-form"><input id="search-query" name="query" minlength="2" maxlength="120" placeholder="Enter a title or search term" required>
+<button type="submit">Search Prowlarr</button></form><p id="search-message" aria-live="polite">Search results will appear here.</p>
+<div id="search-results"></div><h3>Recent searches</h3><div id="search-history" class="muted">No searches yet.</div>
+</section>
 <section class="panel"><h2>Recent logs</h2>
 <pre id="logs">Loading…</pre></section><button onclick="logout()">Sign out</button>
 </main><script>let csrf='';async function refresh(){try{const r=await fetch('/api/status',{cache:'no-store',credentials:'same-origin'});
@@ -347,10 +391,30 @@ document.querySelector('#browser').textContent='Browser health: '+(d.browser||'N
 document.querySelector('#prowlarr').textContent='Prowlarr: '+(d.prowlarr||'Not checked');
 document.querySelector('#qbittorrent').textContent='qBittorrent: '+(d.qbittorrent||'Not checked');
 document.querySelector('#logs').textContent=(Array.isArray(d.logs)?d.logs:[]).join(String.fromCharCode(10));
+renderSearchHistory(d.searches||[]);
 document.querySelector('#updated').textContent='Live status updated: '+new Date().toLocaleTimeString();
 }catch(error){const message='Dashboard data unavailable: '+(error&&error.message?error.message:'network or browser error');
 document.querySelector('#updated').textContent='Status refresh failed';document.querySelector('#engine').textContent=message;document.querySelector('#api').textContent='Check that the Windows Manager is still running and remote access is enabled.';
 document.querySelector('#logs').textContent=message;}}
+function renderSearchResults(entry){const target=document.querySelector('#search-results');target.replaceChildren();
+if(!entry||!Array.isArray(entry.results)||!entry.results.length){target.textContent='No results returned.';return;}
+for(const item of entry.results){const card=document.createElement('div');card.className='result';
+const title=document.createElement('strong');title.textContent=item.title||'Untitled release';card.appendChild(title);
+const meta=document.createElement('div');meta.className='muted';
+const parts=[item.indexer||'Unknown indexer',item.size_label||'Size unknown',
+'Seeds: '+(item.seeders??'—'),'Peers: '+(item.leechers??'—'),item.protocol||''];
+meta.textContent=parts.filter(Boolean).join(' · ');card.appendChild(meta);target.appendChild(card);}}
+function renderSearchHistory(items){const target=document.querySelector('#search-history');target.replaceChildren();
+if(!Array.isArray(items)||!items.length){target.textContent='No searches yet.';return;}
+for(const item of [...items].reverse()){const b=document.createElement('button');b.type='button';b.textContent=item.query+' ('+item.count+')';
+b.addEventListener('click',()=>{document.querySelector('#search-query').value=item.query;renderSearchResults(item);document.querySelector('#search-message').textContent='Previous results · '+item.searched_at;});target.appendChild(b);}}
+document.querySelector('#search-form').addEventListener('submit',async event=>{event.preventDefault();
+const query=document.querySelector('#search-query').value.trim();const message=document.querySelector('#search-message');
+message.textContent='Searching Prowlarr…';try{const r=await fetch('/api/search',{method:'POST',credentials:'same-origin',
+headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({query})});
+const data=await r.json();if(!r.ok)throw new Error(data.error||('HTTP '+r.status));
+renderSearchResults(data);message.textContent='Found '+data.count+' results for “'+data.query+'”.';
+}catch(error){message.textContent='Search failed: '+error.message;renderSearchResults(null);}});
 async function act(action){try{const r=await fetch('/api/action',{method:'POST',credentials:'same-origin',headers:{
 'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action})});if(!r.ok)throw new Error('HTTP '+r.status);setTimeout(refresh,700)}
 catch(error){document.querySelector('#engine').textContent='Action failed: '+error.message;}}
