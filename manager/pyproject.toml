@@ -26,7 +26,7 @@ src = ["."]
 target-version = "py312"
 
 [tool.ruff.lint.isort]
-known-first-party = ["engine_controller", "prowlarr_check", "secret_store"]
+known-first-party = ["engine_controller", "prowlarr_check", "secret_store", "tailscale"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
