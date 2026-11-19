@@ -3,13 +3,16 @@
 import ipaddress
 import re
 import secrets
+import threading
 import shutil
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
+
 import httpx
-from PySide6.QtCore import QSettings, QStandardPaths, Qt, QThread, Signal
+from PySide6.QtCore import QObject, QSettings, QStandardPaths, Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -27,10 +30,19 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from api_diagnostics import format_api_diagnostic
 from build_info import APP_VERSION, BUILD_NUMBER
-from engine_controller import EngineController
+from arr_integrations import ARR_APPS, ArrIntegrationCheckWorker, validate_arr_url
+from engine_controller import EngineController, is_routine_api_probe_log_line
 from prowlarr_check import ProwlarrIntegrationCheckWorker
+from prowlarr_search import ProwlarrSearchClient
 from secret_store import SecretStorageError, SecretStore
+from remote_access import (
+    RemoteDashboardServer,
+    password_verifier,
+    redact_log_line,
+    validate_tailscale_binding,
+)
 
 
 DEFAULT_API_HOST = "127.0.0.1"
@@ -77,62 +89,81 @@ class ApiCheckWorker(QThread):
     """Check the local Byparr API without blocking the desktop interface."""
 
     result = Signal(bool, str)
+    diagnostic = Signal(bool, object, int, str)
 
     def __init__(self, url, parent=None):
         super().__init__(parent)
         self.url = url
 
     def run(self):
+        started = time.perf_counter()
+        status_code = None
         try:
             response = httpx.get(
-                f"{self.url}/openapi.json",
-                timeout=3.0,
+                f"{self.url}/openapi.json", timeout=3.0,
+                follow_redirects=False, trust_env=False,
             )
-            if response.status_code == 200:
-                self.result.emit(True, "API responding")
-            else:
-                self.result.emit(
-                    False,
-                    f"Unexpected response: HTTP {response.status_code}",
-                )
+            status_code = response.status_code
+            elapsed = round((time.perf_counter() - started) * 1000)
+            ok = status_code == 200
+            self.result.emit(ok, "API responding" if ok else f"Unexpected response: HTTP {status_code}")
+            self.diagnostic.emit(ok, status_code, elapsed, "OpenAPI endpoint responding" if ok else "Unexpected API response")
+        except httpx.TimeoutException:
+            elapsed = round((time.perf_counter() - started) * 1000)
+            self.result.emit(False, "API request timed out")
+            self.diagnostic.emit(False, status_code, elapsed, "API request timed out")
         except httpx.RequestError:
+            elapsed = round((time.perf_counter() - started) * 1000)
             self.result.emit(False, "API not responding")
+            self.diagnostic.emit(False, status_code, elapsed, "Could not connect to API")
 
 
 class BrowserHealthCheckWorker(QThread):
     """Run Byparr's browser-backed health check without freezing the interface."""
 
     result = Signal(bool, str)
+    diagnostic = Signal(bool, object, int, str)
 
     def __init__(self, url, parent=None):
         super().__init__(parent)
         self.url = url
 
     def run(self):
+        started = time.perf_counter()
+        status_code = None
         try:
-            # Upstream /health launches a browser and navigates to Google.
-            # Allow more than its usual 60-second navigation timeout.
-            response = httpx.get(f"{self.url}/health", timeout=75.0)
-            if response.status_code != 200:
-                self.result.emit(
-                    False,
-                    f"Health check returned HTTP {response.status_code}",
-                )
+            # /health launches a browser; allow more than its normal navigation timeout.
+            response = httpx.get(
+                f"{self.url}/health", timeout=75.0,
+                follow_redirects=False, trust_env=False,
+            )
+            status_code = response.status_code
+            elapsed = round((time.perf_counter() - started) * 1000)
+            if status_code != 200:
+                self.result.emit(False, f"Health check returned HTTP {status_code}")
+                self.diagnostic.emit(False, status_code, elapsed, "Browser health endpoint returned an error")
                 return
-
             payload = response.json()
-            if payload.get("msg") == "Byparr is working!":
-                version = payload.get("version") or "unknown"
+            if isinstance(payload, dict) and payload.get("msg") == "Byparr is working!":
+                version = "".join(c for c in str(payload.get("version") or "unknown") if c.isprintable())[:40]
                 self.result.emit(True, f"Healthy (version {version})")
+                self.diagnostic.emit(True, status_code, elapsed, f"Browser health passed (version {version})")
             else:
                 self.result.emit(False, "Unexpected health-check response")
+                self.diagnostic.emit(False, status_code, elapsed, "Unexpected health-check response")
         except httpx.TimeoutException:
-            self.result.emit(
-                False,
-                "Health check timed out. The API may still be available.",
-            )
+            elapsed = round((time.perf_counter() - started) * 1000)
+            self.result.emit(False, "Health check timed out. The API may still be available.")
+            self.diagnostic.emit(False, status_code, elapsed, "Browser health request timed out")
         except (httpx.RequestError, ValueError):
+            elapsed = round((time.perf_counter() - started) * 1000)
             self.result.emit(False, "Browser health check could not be completed.")
+            self.diagnostic.emit(False, status_code, elapsed, "Browser health request failed")
+
+
+class RemoteActionBridge(QObject):
+    requested = Signal(str)
+    log_requested = Signal(str)
 
 
 class ByparrManager(QMainWindow):
@@ -146,6 +177,21 @@ class ByparrManager(QMainWindow):
         self.secret_store = SecretStore()
         self.engine_controller = EngineController(self)
         self.engine_controller.status_changed.connect(self.handle_engine_status)
+        self.remote_action_bridge = RemoteActionBridge(self)
+        self.remote_action_bridge.requested.connect(self.handle_remote_action)
+        self.remote_action_bridge.log_requested.connect(self.append_log)
+        self.remote_server = None
+        self.prowlarr_search_client = None
+        self._prowlarr_client_lock = threading.Lock()
+        self.remote_logs = []
+        self.remote_engine_status = "Stopped"
+        self.remote_api_status = "Not checked"
+        self.remote_browser_status = "Not checked"
+        self.remote_prowlarr_status = "Not checked"
+        self.remote_qbittorrent_status = "Not checked"
+        self.remote_arr_status = {app_id: "Not configured" for app_id in ARR_APPS}
+        self.arr_status_labels = {}
+        self.arr_workers = {}
         self.engine_controller.log_message.connect(self.append_log)
         self.prowlarr_url = self.settings.value(
             "integrations/prowlarr_url", "http://127.0.0.1:9696", type=str
@@ -610,6 +656,7 @@ class ByparrManager(QMainWindow):
         self.engine_controller.restart()
 
     def handle_engine_status(self, status):
+        self.remote_engine_status = status
         self.engine_status.setText(status)
         if hasattr(self, "engine_metric_value"):
             self.engine_metric_value.setText(status)
@@ -621,6 +668,7 @@ class ByparrManager(QMainWindow):
             "Restarting": "#e7bd70",
             "Engine files missing": "#e57373",
             "Failed to start": "#e57373",
+            "API unavailable": "#e57373",
         }
         self.status_dot.setStyleSheet(
             f"color: {colors.get(status, '#e7bd70')}; font-size: 18px;"
@@ -628,8 +676,12 @@ class ByparrManager(QMainWindow):
         self.start_button.setEnabled(status in {
             "Stopped", "Engine files missing", "Failed to start"
         })
-        self.stop_button.setEnabled(status in {"Starting", "Running", "Restarting"})
-        self.restart_button.setEnabled(status in {"Starting", "Running"})
+        self.stop_button.setEnabled(
+            status in {"Starting", "Running", "API unavailable", "Restarting"}
+        )
+        self.restart_button.setEnabled(
+            status in {"Starting", "Running", "API unavailable"}
+        )
         if status in {"Stopped", "Engine files missing", "Failed to start"}:
             self.browser_health_status.setText("Not checked")
             self.browser_health_status.setStyleSheet("color: #98a5b8;")
@@ -638,6 +690,11 @@ class ByparrManager(QMainWindow):
             self.browser_health_button.setEnabled(status == "Running")
 
     def append_log(self, message):
+        if is_routine_api_probe_log_line(message):
+            return
+        message = redact_log_line(message)
+        self.remote_logs.append(message)
+        self.remote_logs = self.remote_logs[-100:]
         if hasattr(self, "log_view"):
             self.log_view.append(message)
 
@@ -653,6 +710,7 @@ class ByparrManager(QMainWindow):
             self.close()
 
     def closeEvent(self, event):
+        self.stop_remote_access()
         self.engine_controller.shutdown()
         event.accept()
 
@@ -666,24 +724,32 @@ class ByparrManager(QMainWindow):
 
         self.api_worker = ApiCheckWorker(api_endpoint(self.api_host, self.api_port), self)
         self.api_worker.result.connect(self.handle_api_check_result)
+        self.api_worker.diagnostic.connect(
+            lambda ok, code, elapsed, detail: self.append_api_diagnostic(
+                "Byparr API", ok, code, elapsed, detail
+            )
+        )
         self.api_worker.finished.connect(
             lambda: self.check_button.setEnabled(True)
         )
         self.api_worker.start()
 
     def handle_api_check_result(self, success, message):
+        self.remote_api_status = message
         self.api_connection_status.setText(message)
         color = "#48c78e" if success else "#e57373"
         self.api_connection_status.setStyleSheet(f"color: {color};")
 
     def check_browser_health(self):
         if self.engine_controller._status != "Running":
+            self.remote_browser_status = "Start the engine first"
             self.browser_health_status.setText("Start the engine first")
             self.browser_health_status.setStyleSheet("color: #e7bd70;")
             return
         if hasattr(self, "browser_health_worker") and self.browser_health_worker.isRunning():
             return
 
+        self.remote_browser_status = "Checking browser..."
         self.browser_health_status.setText(
             "Checking browser... this can take up to 75 seconds"
         )
@@ -695,6 +761,11 @@ class ByparrManager(QMainWindow):
         self.browser_health_worker.result.connect(
             self.handle_browser_health_result
         )
+        self.browser_health_worker.diagnostic.connect(
+            lambda ok, code, elapsed, detail: self.append_api_diagnostic(
+                "Browser health", ok, code, elapsed, detail
+            )
+        )
         self.browser_health_worker.finished.connect(
             lambda: self.browser_health_button.setEnabled(
                 self.engine_controller._status == "Running"
@@ -703,15 +774,25 @@ class ByparrManager(QMainWindow):
         self.browser_health_worker.start()
 
     def handle_browser_health_result(self, success, message):
+        self.remote_browser_status = message
         self.browser_health_status.setText(message)
         color = "#48c78e" if success else "#e57373"
         self.browser_health_status.setStyleSheet(f"color: {color};")
         self.append_log(f"Browser health check: {message}")
 
+    def append_api_diagnostic(self, service, success, status_code, elapsed_ms, detail):
+        """Add a timestamped API check line to desktop and remote logs."""
+        self.append_log(
+            format_api_diagnostic(service, success, status_code, elapsed_ms, detail)
+        )
+
     def update_integration_metric(self):
         """Show saved credentials, without implying the services are connected."""
         saved = []
-        for integration_id, name in (("prowlarr", "Prowlarr"), ("jackett", "Jackett")):
+        for integration_id, name in (
+            ("prowlarr", "Prowlarr"), ("jackett", "Jackett"),
+            ("radarr", "Radarr"), ("sonarr", "Sonarr"), ("lidarr", "Lidarr"),
+        ):
             try:
                 if self.secret_store.get(integration_id):
                     saved.append(name)
@@ -730,7 +811,12 @@ class ByparrManager(QMainWindow):
 
     def create_integrations(self):
         page = QWidget()
-        layout = QVBoxLayout(page)
+        outer_layout = QVBoxLayout(page)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        content = QWidget()
+        layout = QVBoxLayout(content)
         layout.setContentsMargins(38, 32, 38, 30)
         layout.setSpacing(18)
         layout.addLayout(self.page_header(
@@ -769,7 +855,12 @@ class ByparrManager(QMainWindow):
             "Configure the API key used to connect to your Jackett instance."
         )
 
+        for app_id in ("radarr", "sonarr", "lidarr"):
+            self.add_arr_integration_panel(layout, app_id)
+
         layout.addStretch()
+        scroll.setWidget(content)
+        outer_layout.addWidget(scroll, 1)
         return page
 
     def save_prowlarr_url(self):
@@ -802,6 +893,8 @@ class ByparrManager(QMainWindow):
             api_key = None
 
         if not api_key:
+            self.remote_prowlarr_status = "API key not saved"
+            self.remote_qbittorrent_status = "Not checked"
             self.prowlarr_connection_status.setText("API key not saved")
             self.prowlarr_connection_status.setStyleSheet("color: #e7bd70;")
             self.qbittorrent_connection_status.setText("Not checked")
@@ -809,6 +902,8 @@ class ByparrManager(QMainWindow):
             self.change_page(1)
             return
 
+        self.remote_prowlarr_status = "Checking..."
+        self.remote_qbittorrent_status = "Checking..."
         self.prowlarr_connection_status.setText("Checking...")
         self.prowlarr_connection_status.setStyleSheet("color: #e7bd70;")
         self.qbittorrent_connection_status.setText("Checking...")
@@ -818,6 +913,11 @@ class ByparrManager(QMainWindow):
             self.prowlarr_url, api_key, self
         )
         self.prowlarr_worker.result.connect(self.handle_prowlarr_check_result)
+        self.prowlarr_worker.diagnostic.connect(
+            lambda service, ok, code, elapsed, detail: self.append_api_diagnostic(
+                service, ok, code, elapsed, detail
+            )
+        )
         self.prowlarr_worker.finished.connect(
             lambda: self.prowlarr_check_button.setEnabled(True)
         )
@@ -826,6 +926,8 @@ class ByparrManager(QMainWindow):
     def handle_prowlarr_check_result(
         self, prowlarr_ok, prowlarr_message, qbittorrent_ok, qbittorrent_message
     ):
+        self.remote_prowlarr_status = prowlarr_message
+        self.remote_qbittorrent_status = qbittorrent_message
         self.prowlarr_connection_status.setText(prowlarr_message)
         prowlarr_color = "#48c78e" if prowlarr_ok else "#e57373"
         self.prowlarr_connection_status.setStyleSheet(f"color: {prowlarr_color};")
@@ -911,9 +1013,156 @@ class ByparrManager(QMainWindow):
         panel_layout.addLayout(actions)
         parent_layout.addWidget(panel)
 
+
+    def add_arr_integration_panel(self, parent_layout, app_id):
+        """Add a separately configured, securely credentialed Arr application."""
+        app = ARR_APPS[app_id]
+        name = app["name"]
+        default_url = f"http://127.0.0.1:{app['default_port']}"
+        url = self.settings.value(f"integrations/{app_id}_url", default_url, type=str)
+        panel, panel_layout = self.make_panel(
+            name,
+            f"Connect Byparr Manager to your {name} API. The API key is stored only in the Windows credential vault."
+        )
+        panel_layout.addWidget(QLabel(f"{name} address"))
+        url_input = QLineEdit(url)
+        url_input.setPlaceholderText(default_url)
+        panel_layout.addWidget(url_input)
+        panel_layout.addWidget(QLabel("API key"))
+        key_input = QLineEdit()
+        key_input.setEchoMode(QLineEdit.Password)
+        key_input.setPlaceholderText(f"Enter {name} API key")
+        key_input.setClearButtonEnabled(True)
+        panel_layout.addWidget(key_input)
+        status = QLabel()
+        status.setObjectName("muted")
+        status.setWordWrap(True)
+        self.arr_status_labels[app_id] = status
+        try:
+            saved = self.secret_store.get(app_id)
+            status.setText(self.remote_arr_status[app_id] if saved else "No API key saved.")
+        except SecretStorageError as error:
+            status.setText(str(error))
+        panel_layout.addWidget(status)
+
+        actions = QHBoxLayout()
+        save_button = QPushButton("Save connection")
+        save_button.setObjectName("primary")
+        def save_connection():
+            try:
+                normalized = validate_arr_url(url_input.text(), app_id)
+                self.secret_store.set(app_id, key_input.text())
+            except (SecretStorageError, ValueError) as error:
+                status.setText(str(error))
+                status.setStyleSheet("color: #e57373;")
+                return
+            self.settings.setValue(f"integrations/{app_id}_url", normalized)
+            self.settings.sync()
+            url_input.setText(normalized)
+            key_input.clear()
+            status.setText("Connection details saved securely. Run Test connection.")
+            status.setStyleSheet("color: #48c78e;")
+            self.update_integration_metric()
+        save_button.clicked.connect(save_connection)
+        actions.addWidget(save_button)
+
+        test_button = QPushButton("Test connection")
+        def test_connection():
+            if app_id in self.arr_workers and self.arr_workers[app_id].isRunning():
+                return
+            try:
+                normalized = validate_arr_url(url_input.text(), app_id)
+                api_key = self.secret_store.get(app_id)
+            except (SecretStorageError, ValueError) as error:
+                status.setText(str(error))
+                status.setStyleSheet("color: #e57373;")
+                return
+            if not api_key:
+                status.setText("Save the API key before testing this connection.")
+                status.setStyleSheet("color: #e7bd70;")
+                return
+            self.settings.setValue(f"integrations/{app_id}_url", normalized)
+            self.settings.sync()
+            status.setText("Checking connection…")
+            status.setStyleSheet("color: #e7bd70;")
+            test_button.setEnabled(False)
+            worker = ArrIntegrationCheckWorker(app_id, normalized, api_key, self)
+            self.arr_workers[app_id] = worker
+            worker.result.connect(self.handle_arr_check_result)
+            worker.diagnostic.connect(
+                lambda service, ok, code, elapsed, detail: self.append_api_diagnostic(
+                    ARR_APPS[service]["name"], ok, code, elapsed, detail
+                )
+            )
+            worker.finished.connect(lambda: test_button.setEnabled(True))
+            worker.start()
+        test_button.clicked.connect(test_connection)
+        actions.addWidget(test_button)
+
+        remove_button = QPushButton("Remove API key")
+        def remove_key():
+            try:
+                self.secret_store.delete(app_id)
+            except SecretStorageError as error:
+                status.setText(str(error))
+                status.setStyleSheet("color: #e57373;")
+                return
+            key_input.clear()
+            self.remote_arr_status[app_id] = "API key not saved"
+            status.setText("Saved API key removed from the credential vault.")
+            status.setStyleSheet("color: #98a5b8;")
+            self.update_integration_metric()
+        remove_button.clicked.connect(remove_key)
+        actions.addWidget(remove_button)
+        actions.addStretch()
+        panel_layout.addLayout(actions)
+        parent_layout.addWidget(panel)
+
+    def check_all_arr_integrations(self):
+        """Refresh all configured Arr connections for the remote status dashboard."""
+        for app_id in ARR_APPS:
+            if app_id in self.arr_workers and self.arr_workers[app_id].isRunning():
+                continue
+            try:
+                api_key = self.secret_store.get(app_id)
+                url = self.settings.value(
+                    f"integrations/{app_id}_url",
+                    f"http://127.0.0.1:{ARR_APPS[app_id]['default_port']}",
+                    type=str,
+                )
+            except SecretStorageError:
+                self.remote_arr_status[app_id] = "Credential vault unavailable"
+                continue
+            if not api_key:
+                self.remote_arr_status[app_id] = "API key not saved"
+                continue
+            worker = ArrIntegrationCheckWorker(app_id, url, api_key, self)
+            self.arr_workers[app_id] = worker
+            worker.result.connect(self.handle_arr_check_result)
+            worker.diagnostic.connect(
+                lambda service, ok, code, elapsed, detail: self.append_api_diagnostic(
+                    ARR_APPS[service]["name"], ok, code, elapsed, detail
+                )
+            )
+            worker.start()
+
+    def handle_arr_check_result(self, app_id, ok, message):
+        """Update the matching Arr status without logging credential material."""
+        self.remote_arr_status[app_id] = message
+        label = self.arr_status_labels.get(app_id)
+        if label is not None:
+            label.setText(message)
+            label.setStyleSheet("color: #48c78e;" if ok else "color: #e57373;")
+        self.append_log(f"{ARR_APPS[app_id]['name']} integration check: {message}")
+
     def create_settings(self):
         page = QWidget()
-        layout = QVBoxLayout(page)
+        outer_layout = QVBoxLayout(page)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        content = QWidget()
+        layout = QVBoxLayout(content)
         layout.setContentsMargins(38, 32, 38, 30)
         layout.setSpacing(18)
         layout.addLayout(self.page_header(
@@ -957,8 +1206,149 @@ class ByparrManager(QMainWindow):
         panel_layout.addWidget(self.settings_status)
 
         layout.addWidget(panel)
+
+        remote_panel, remote_layout = self.make_panel(
+            "Tailscale remote dashboard",
+            "Optional remote control from your own Tailscale devices. The service binds "
+            "only to the Tailscale IP entered below; it does not open a public internet port. "
+            "Remote access is stopped whenever you close Byparr Manager."
+        )
+        remote_layout.addWidget(QLabel("This Windows PC's Tailscale IP address"))
+        self.remote_host_input = QLineEdit(self.settings.value("remote/host", "", type=str))
+        self.remote_host_input.setPlaceholderText("100.x.x.x")
+        remote_layout.addWidget(self.remote_host_input)
+        remote_layout.addWidget(QLabel("Remote dashboard port"))
+        self.remote_port_input = QLineEdit(str(self.settings.value("remote/port", 8765, type=int)))
+        remote_layout.addWidget(self.remote_port_input)
+        remote_layout.addWidget(QLabel("Remote login username"))
+        self.remote_username_input = QLineEdit(self.settings.value("remote/username", "", type=str))
+        self.remote_username_input.setPlaceholderText("Choose a dashboard username")
+        remote_layout.addWidget(self.remote_username_input)
+        remote_layout.addWidget(QLabel("Remote login password"))
+        self.remote_password_input = QLineEdit()
+        self.remote_password_input.setEchoMode(QLineEdit.Password)
+        self.remote_password_input.setPlaceholderText("Set a new password (14+ characters); leave blank to reuse saved login")
+        remote_layout.addWidget(self.remote_password_input)
+        remote_actions = QHBoxLayout()
+        self.remote_start_button = QPushButton("Enable remote access")
+        self.remote_start_button.setObjectName("primary")
+        self.remote_start_button.clicked.connect(self.start_remote_access)
+        remote_actions.addWidget(self.remote_start_button)
+        self.remote_stop_button = QPushButton("Disable remote access")
+        self.remote_stop_button.clicked.connect(self.stop_remote_access)
+        self.remote_stop_button.setEnabled(False)
+        remote_actions.addWidget(self.remote_stop_button)
+        remote_actions.addStretch()
+        remote_layout.addLayout(remote_actions)
+        self.remote_status_label = QLabel("Remote access is disabled.")
+        self.remote_status_label.setObjectName("muted")
+        self.remote_status_label.setWordWrap(True)
+        remote_layout.addWidget(self.remote_status_label)
+        layout.addWidget(remote_panel)
         layout.addStretch()
+        scroll.setWidget(content)
+        outer_layout.addWidget(scroll, 1)
         return page
+
+    def _remote_prowlarr_client(self):
+        """Reuse the search client so opaque result handles remain valid for grabs."""
+        try:
+            api_key = self.secret_store.get("prowlarr")
+        except SecretStorageError as error:
+            raise RuntimeError("Prowlarr API key is unavailable.") from error
+        if not api_key:
+            raise RuntimeError("Prowlarr API key is not saved.")
+        with self._prowlarr_client_lock:
+            client = self.prowlarr_search_client
+            if (
+                client is None
+                or client.base_url != self.prowlarr_url.rstrip("/")
+                or client.api_key != api_key
+            ):
+                client = ProwlarrSearchClient(self.prowlarr_url, api_key)
+                self.prowlarr_search_client = client
+            return client
+
+    def remote_prowlarr_search(self, query, category="all"):
+        """Search Prowlarr without exposing its API key or release URLs remotely."""
+        return self._remote_prowlarr_client().search(query, category)
+
+    def remote_prowlarr_grab(self, grab_id):
+        """Send a selected release to the download client configured inside Prowlarr."""
+        return self._remote_prowlarr_client().grab(grab_id)
+
+    def remote_status_snapshot(self):
+        return {
+            "engine": self.remote_engine_status,
+            "api": f"Local Byparr API: {api_endpoint(self.api_host, self.api_port)} — {self.remote_api_status}",
+            "browser": self.remote_browser_status,
+            "prowlarr": self.remote_prowlarr_status,
+            "qbittorrent": self.remote_qbittorrent_status,
+            **self.remote_arr_status,
+        }
+
+    def handle_remote_action(self, action):
+        if action == "start":
+            self.start_engine()
+        elif action == "stop":
+            self.stop_engine()
+        elif action == "restart":
+            self.restart_engine()
+        elif action == "browser-health":
+            self.check_browser_health()
+        elif action == "check-integrations":
+            self.check_prowlarr_integration()
+            self.check_all_arr_integrations()
+
+    def start_remote_access(self):
+        if self.remote_server and self.remote_server.running: return
+        try:
+            host, port = validate_tailscale_binding(self.remote_host_input.text(), self.remote_port_input.text())
+            username = self.remote_username_input.text().strip()
+            if not username or len(username) > 64: raise ValueError("Enter a remote login username (maximum 64 characters).")
+            salt = self.settings.value("remote/password_salt", "", type=str)
+            verifier = self.settings.value("remote/password_verifier", "", type=str)
+            new_password = self.remote_password_input.text()
+            if new_password:
+                salt, verifier = password_verifier(new_password)
+                self.remote_password_input.clear()
+            elif not salt or not verifier: raise ValueError("Set a new remote login password with at least 14 characters.")
+            self.settings.setValue("remote/host", host)
+            self.settings.setValue("remote/port", port)
+            self.settings.setValue("remote/username", username)
+            self.settings.setValue("remote/password_salt", salt)
+            self.settings.setValue("remote/password_verifier", verifier)
+            self.settings.sync()
+            self.remote_server = RemoteDashboardServer(
+                host, port, username, salt, verifier,
+                self.remote_status_snapshot,
+                self.remote_action_bridge.requested.emit,
+                lambda: self.remote_logs[-100:],
+                self.remote_action_bridge.log_requested.emit,
+                search_handler=self.remote_prowlarr_search,
+            grab_handler=self.remote_prowlarr_grab,
+            )
+            self.remote_server.start()
+        except (ValueError, OSError) as error:
+            self.remote_status_label.setText(f"Could not enable remote access: {error}")
+            self.remote_status_label.setStyleSheet("color: #e57373;")
+            return
+        self.remote_password_input.clear()
+        self.remote_start_button.setEnabled(False)
+        self.remote_stop_button.setEnabled(True)
+        self.remote_status_label.setText(f"Remote dashboard is active on http://{host}:{port}. Open this address on your Mac while connected to Tailscale.")
+        self.remote_status_label.setStyleSheet("color: #48c78e;")
+        self.append_log(f"Remote dashboard enabled on Tailscale address {host}:{port}.")
+
+    def stop_remote_access(self):
+        if self.remote_server:
+            self.remote_server.stop()
+            self.remote_server = None
+        if hasattr(self, "remote_start_button"):
+            self.remote_start_button.setEnabled(True)
+            self.remote_stop_button.setEnabled(False)
+            self.remote_status_label.setText("Remote access is disabled.")
+            self.remote_status_label.setStyleSheet("color: #98a5b8;")
 
     def save_api_settings(self):
         try:
@@ -1171,6 +1561,7 @@ class ByparrManager(QMainWindow):
         log_view = QTextEdit()
         self.log_view = log_view
         log_view.setReadOnly(True)
+        log_view.document().setMaximumBlockCount(2000)
         log_view.setMinimumHeight(360)
         log_view.setPlainText(
             "Byparr Manager started.\n"
