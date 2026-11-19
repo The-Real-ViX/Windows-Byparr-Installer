@@ -27,6 +27,8 @@ class ProwlarrIntegrationCheckWorker(QThread):
             self.diagnostic.emit("qBittorrent (via Prowlarr)", False, None, 0, "Not checked")
             return
 
+        current_service = "Prowlarr"
+        started = time.perf_counter()
         try:
             parsed = httpx.URL(self.base_url)
             if (
@@ -82,6 +84,7 @@ class ProwlarrIntegrationCheckWorker(QThread):
                 self.diagnostic.emit("qBittorrent (via Prowlarr)", False, None, 0, "Configured but disabled")
                 return
 
+            current_service = "qBittorrent (via Prowlarr)"
             started = time.perf_counter()
             response = httpx.post(
                 f"{self.base_url}/api/v1/downloadclient/testall",
@@ -139,8 +142,10 @@ class ProwlarrIntegrationCheckWorker(QThread):
                 )
 
         except httpx.TimeoutException:
-            self.diagnostic.emit("Prowlarr / qBittorrent", False, None, 0, "API request timed out")
+            elapsed = round((time.perf_counter() - started) * 1000)
+            self.diagnostic.emit(current_service, False, None, elapsed, "API request timed out")
             self._emit(False, "Could not reach Prowlarr", False, "Not checked")
         except (httpx.RequestError, httpx.InvalidURL, ValueError):
-            self.diagnostic.emit("Prowlarr / qBittorrent", False, None, 0, "API request failed")
+            elapsed = round((time.perf_counter() - started) * 1000)
+            self.diagnostic.emit(current_service, False, None, elapsed, "API request failed")
             self._emit(False, "Could not reach Prowlarr", False, "Not checked")
