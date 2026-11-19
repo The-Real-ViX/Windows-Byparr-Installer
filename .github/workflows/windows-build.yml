@@ -78,7 +78,6 @@ jobs:
           --windowed
           --name ByparrManager
           --icon assets/byparr-manager.ico
-          --collect-all PySide6
           --collect-all keyring
           --collect-all win32ctypes
           --hidden-import win32timezone
