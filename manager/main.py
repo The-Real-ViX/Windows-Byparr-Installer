@@ -6,6 +6,7 @@ import secrets
 import threading
 import shutil
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -28,6 +29,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from api_diagnostics import format_api_diagnostic
 from build_info import APP_VERSION, BUILD_NUMBER
 from arr_integrations import ARR_APPS, ArrIntegrationCheckWorker, validate_arr_url
 from engine_controller import EngineController, is_routine_api_probe_log_line
@@ -81,62 +83,76 @@ class ApiCheckWorker(QThread):
     """Check the local Byparr API without blocking the desktop interface."""
 
     result = Signal(bool, str)
+    diagnostic = Signal(bool, object, int, str)
 
     def __init__(self, url, parent=None):
         super().__init__(parent)
         self.url = url
 
     def run(self):
+        started = time.perf_counter()
+        status_code = None
         try:
             response = httpx.get(
-                f"{self.url}/openapi.json",
-                timeout=3.0,
+                f"{self.url}/openapi.json", timeout=3.0,
+                follow_redirects=False, trust_env=False,
             )
-            if response.status_code == 200:
-                self.result.emit(True, "API responding")
-            else:
-                self.result.emit(
-                    False,
-                    f"Unexpected response: HTTP {response.status_code}",
-                )
+            status_code = response.status_code
+            elapsed = round((time.perf_counter() - started) * 1000)
+            ok = status_code == 200
+            self.result.emit(ok, "API responding" if ok else f"Unexpected response: HTTP {status_code}")
+            self.diagnostic.emit(ok, status_code, elapsed, "OpenAPI endpoint responding" if ok else "Unexpected API response")
+        except httpx.TimeoutException:
+            elapsed = round((time.perf_counter() - started) * 1000)
+            self.result.emit(False, "API request timed out")
+            self.diagnostic.emit(False, status_code, elapsed, "API request timed out")
         except httpx.RequestError:
+            elapsed = round((time.perf_counter() - started) * 1000)
             self.result.emit(False, "API not responding")
+            self.diagnostic.emit(False, status_code, elapsed, "Could not connect to API")
 
 
 class BrowserHealthCheckWorker(QThread):
     """Run Byparr's browser-backed health check without freezing the interface."""
 
     result = Signal(bool, str)
+    diagnostic = Signal(bool, object, int, str)
 
     def __init__(self, url, parent=None):
         super().__init__(parent)
         self.url = url
 
     def run(self):
+        started = time.perf_counter()
+        status_code = None
         try:
-            # Upstream /health launches a browser and navigates to Google.
-            # Allow more than its usual 60-second navigation timeout.
-            response = httpx.get(f"{self.url}/health", timeout=75.0)
-            if response.status_code != 200:
-                self.result.emit(
-                    False,
-                    f"Health check returned HTTP {response.status_code}",
-                )
+            # /health launches a browser; allow more than its normal navigation timeout.
+            response = httpx.get(
+                f"{self.url}/health", timeout=75.0,
+                follow_redirects=False, trust_env=False,
+            )
+            status_code = response.status_code
+            elapsed = round((time.perf_counter() - started) * 1000)
+            if status_code != 200:
+                self.result.emit(False, f"Health check returned HTTP {status_code}")
+                self.diagnostic.emit(False, status_code, elapsed, "Browser health endpoint returned an error")
                 return
-
             payload = response.json()
-            if payload.get("msg") == "Byparr is working!":
-                version = payload.get("version") or "unknown"
+            if isinstance(payload, dict) and payload.get("msg") == "Byparr is working!":
+                version = "".join(c for c in str(payload.get("version") or "unknown") if c.isprintable())[:40]
                 self.result.emit(True, f"Healthy (version {version})")
+                self.diagnostic.emit(True, status_code, elapsed, f"Browser health passed (version {version})")
             else:
                 self.result.emit(False, "Unexpected health-check response")
+                self.diagnostic.emit(False, status_code, elapsed, "Unexpected health-check response")
         except httpx.TimeoutException:
-            self.result.emit(
-                False,
-                "Health check timed out. The API may still be available.",
-            )
+            elapsed = round((time.perf_counter() - started) * 1000)
+            self.result.emit(False, "Health check timed out. The API may still be available.")
+            self.diagnostic.emit(False, status_code, elapsed, "Browser health request timed out")
         except (httpx.RequestError, ValueError):
+            elapsed = round((time.perf_counter() - started) * 1000)
             self.result.emit(False, "Browser health check could not be completed.")
+            self.diagnostic.emit(False, status_code, elapsed, "Browser health request failed")
 
 
 class RemoteActionBridge(QObject):
@@ -696,6 +712,11 @@ class ByparrManager(QMainWindow):
 
         self.api_worker = ApiCheckWorker(api_endpoint(self.api_host, self.api_port), self)
         self.api_worker.result.connect(self.handle_api_check_result)
+        self.api_worker.diagnostic.connect(
+            lambda ok, code, elapsed, detail: self.append_api_diagnostic(
+                "Byparr API", ok, code, elapsed, detail
+            )
+        )
         self.api_worker.finished.connect(
             lambda: self.check_button.setEnabled(True)
         )
@@ -728,6 +749,11 @@ class ByparrManager(QMainWindow):
         self.browser_health_worker.result.connect(
             self.handle_browser_health_result
         )
+        self.browser_health_worker.diagnostic.connect(
+            lambda ok, code, elapsed, detail: self.append_api_diagnostic(
+                "Browser health", ok, code, elapsed, detail
+            )
+        )
         self.browser_health_worker.finished.connect(
             lambda: self.browser_health_button.setEnabled(
                 self.engine_controller._status == "Running"
@@ -741,6 +767,12 @@ class ByparrManager(QMainWindow):
         color = "#48c78e" if success else "#e57373"
         self.browser_health_status.setStyleSheet(f"color: {color};")
         self.append_log(f"Browser health check: {message}")
+
+    def append_api_diagnostic(self, service, success, status_code, elapsed_ms, detail):
+        """Add a timestamped API check line to desktop and remote logs."""
+        self.append_log(
+            format_api_diagnostic(service, success, status_code, elapsed_ms, detail)
+        )
 
     def update_integration_metric(self):
         """Show saved credentials, without implying the services are connected."""
@@ -869,6 +901,11 @@ class ByparrManager(QMainWindow):
             self.prowlarr_url, api_key, self
         )
         self.prowlarr_worker.result.connect(self.handle_prowlarr_check_result)
+        self.prowlarr_worker.diagnostic.connect(
+            lambda service, ok, code, elapsed, detail: self.append_api_diagnostic(
+                service, ok, code, elapsed, detail
+            )
+        )
         self.prowlarr_worker.finished.connect(
             lambda: self.prowlarr_check_button.setEnabled(True)
         )
@@ -1085,6 +1122,11 @@ class ByparrManager(QMainWindow):
             worker = ArrIntegrationCheckWorker(app_id, url, api_key, self)
             self.arr_workers[app_id] = worker
             worker.result.connect(self.handle_arr_check_result)
+            worker.diagnostic.connect(
+                lambda service, ok, code, elapsed, detail: self.append_api_diagnostic(
+                    ARR_APPS[service]["name"], ok, code, elapsed, detail
+                )
+            )
             worker.start()
 
     def handle_arr_check_result(self, app_id, ok, message):
@@ -1502,6 +1544,7 @@ class ByparrManager(QMainWindow):
         log_view = QTextEdit()
         self.log_view = log_view
         log_view.setReadOnly(True)
+        log_view.setMaximumBlockCount(2000)
         log_view.setMinimumHeight(360)
         log_view.setPlainText(
             "Byparr Manager started.\n"
