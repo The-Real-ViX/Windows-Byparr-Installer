@@ -1,6 +1,6 @@
 [project]
 name = "byparr-manager"
-version = "0.4.0"
+version = "0.5.0"
 description = "A native desktop management interface for the Windows Byparr Installer project."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -18,14 +18,15 @@ dev = [
 ]
 
 [tool.setuptools]
-py-modules = ["main", "secret_store"]
+py-modules = ["main", "secret_store", "engine_controller", "prowlarr_check", "tailscale"]
 
 [tool.ruff]
 line-length = 100
+src = ["."]
 target-version = "py312"
 
 [tool.ruff.lint.isort]
-known-first-party = ["secret_store"]
+known-first-party = ["engine_controller", "prowlarr_check", "secret_store", "tailscale"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

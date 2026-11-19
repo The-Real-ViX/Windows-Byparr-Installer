@@ -1,0 +1,73 @@
+name: Bug report
+description: Report a problem with Byparr Manager or its Windows installer.
+title: "[Bug]: "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping test the beta. Please search existing issues first. **Never include API keys, passwords, cookies, tokens, private tracker links or other secrets.**
+  - type: input
+    id: app_version
+    attributes:
+      label: Byparr Manager version and build
+      description: For example, v0.4.0 build 124.
+      placeholder: v0.4.0 build ...
+    validations:
+      required: true
+  - type: input
+    id: windows_version
+    attributes:
+      label: Windows version
+      description: Press Win+R, enter winver, and provide the edition/version/build.
+      placeholder: Windows 11 ...
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What did you click or do? Please list the steps.
+      placeholder: |
+        1. Open Byparr Manager
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where did it happen?
+      options:
+        - Installation or update
+        - Dashboard / engine start-stop
+        - API or browser health
+        - Prowlarr integration
+        - qBittorrent integration
+        - Logs or diagnostics
+        - Uninstall
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs (optional)
+      description: Review and redact secrets, private URLs, usernames, local paths and IP addresses before posting.
+      render: text
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else? (optional)
+      description: Screenshots are welcome after checking they contain no private information.

@@ -49,6 +49,12 @@ Expose three distinct results:
 
 A failed browser operation should not automatically be described as an API outage. Record the stage and useful error details without exposing secrets.
 
+### Tailscale remote access
+
+Remote access is opt-in. When enabled, the Manager discovers the active Tailscale IPv4 address using the local Tailscale CLI and configures the engine to bind only to that address. It must never silently fall back to a wildcard bind such as `0.0.0.0`. If Tailscale is unavailable, remote-mode engine startup is blocked with a clear explanation. Local-only loopback binding remains the default.
+
+Tailscale provides the encrypted network path and tailnet access policy; it does not add application-level authentication to the Byparr API. Documentation must make this distinction explicit. Do not create router port-forwarding rules or public reverse-proxy exposure as part of this feature. The Manager currently supervises the engine process, so the Manager must remain open while remote access is needed.
+
 ### Integration adapters
 
 Prowlarr and Jackett adapters must be based on the current supported contracts of those applications. If Prowlarr expects the FlareSolverr protocol, the project must provide a separately tested translation layer where the pinned Byparr API differs. The native Byparr endpoint must not be presented as FlareSolverr-compatible without evidence.

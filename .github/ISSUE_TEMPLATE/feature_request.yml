@@ -1,0 +1,42 @@
+name: Feature request
+description: Suggest an improvement or new capability.
+title: "[Feature]: "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping shape the project. Please check existing issues first. This is a small community project, so suggestions will be considered as time allows.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the task or frustration you want to improve.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to happen?
+      description: Describe your suggested behaviour.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which area is this about?
+      options:
+        - Installation or updates
+        - Dashboard / engine controls
+        - Prowlarr
+        - qBittorrent
+        - Logs and diagnostics
+        - Accessibility or ease of use
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or examples (optional)

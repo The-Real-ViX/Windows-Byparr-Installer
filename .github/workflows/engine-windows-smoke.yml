@@ -1,0 +1,104 @@
+name: Byparr engine Windows compatibility
+
+on:
+  push:
+    branches:
+      - "**"
+    paths:
+      - "UPSTREAM.lock.json"
+      - "scripts/Get-Upstream.ps1"
+      - ".github/workflows/engine-windows-smoke.yml"
+  pull_request:
+    paths:
+      - "UPSTREAM.lock.json"
+      - "scripts/Get-Upstream.ps1"
+      - ".github/workflows/engine-windows-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-engine-smoke:
+    name: Verify pinned Byparr engine on Windows 11
+    runs-on: windows-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Check out installer project
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: false
+
+      - name: Download and validate pinned upstream source
+        shell: pwsh
+        run: .\scripts\Get-Upstream.ps1
+
+      - name: Install pinned Byparr dependencies
+        working-directory: vendor/Byparr
+        shell: pwsh
+        run: uv sync --locked
+
+      - name: Fetch the Windows browser runtime
+        working-directory: vendor/Byparr
+        shell: pwsh
+        run: uv run invisible-playwright fetch
+
+      - name: Start Byparr and verify its local API
+        working-directory: vendor/Byparr
+        shell: pwsh
+        env:
+          HOST: 127.0.0.1
+          PORT: "8191"
+          BROWSER_LOCALE: en-GB
+          BROWSER_TIMEZONE: Europe/London
+        run: |
+          $stdout = Join-Path $env:RUNNER_TEMP "byparr-engine.stdout.log"
+          $stderr = Join-Path $env:RUNNER_TEMP "byparr-engine.stderr.log"
+          $process = Start-Process -FilePath "uv" -ArgumentList @("run", "python", "main.py") -WorkingDirectory (Get-Location).Path -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+
+          try {
+              $ready = $false
+              for ($attempt = 1; $attempt -le 90; $attempt++) {
+                  Start-Sleep -Seconds 2
+                  if ($process.HasExited) {
+                      throw "Byparr exited during startup with code $($process.ExitCode)."
+                  }
+                  try {
+                      $response = Invoke-WebRequest -Uri "http://127.0.0.1:8191/openapi.json" -TimeoutSec 3
+                      if ($response.StatusCode -eq 200) {
+                          $ready = $true
+                          break
+                      }
+                  }
+                  catch {
+                      # The service may need time to fetch its browser metadata and warm up.
+                  }
+              }
+
+              if (-not $ready) {
+                  throw "Byparr did not expose /openapi.json within 180 seconds."
+              }
+
+              Write-Host "SUCCESS: Byparr returned HTTP 200 from /openapi.json on Windows."
+          }
+          catch {
+              Write-Host "----- Byparr stdout -----"
+              if (Test-Path $stdout) { Get-Content $stdout }
+              Write-Host "----- Byparr stderr -----"
+              if (Test-Path $stderr) { Get-Content $stderr }
+              throw
+          }
+          finally {
+              if (-not $process.HasExited) {
+                  Stop-Process -Id $process.Id -Force
+              }
+          }

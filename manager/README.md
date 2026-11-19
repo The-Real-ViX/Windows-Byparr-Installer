@@ -1,55 +1,43 @@
-# Byparr Manager
+# Byparr Manager — Windows
 
-The PySide6 desktop interface for the Windows Byparr Installer project.
+Byparr Manager is an independent community-built Windows desktop control centre for the upstream [Byparr](https://github.com/ThePhaseless/Byparr) engine.
 
-## Current status
+**Version:** 0.5.0 Beta  
+**Platform:** Windows 11 x64
 
-This is the recovered v0.4 interface preview. It provides a Dashboard, Integrations, Settings, and Logs pages, plus a local API connectivity check.
+## Main features
 
-The manager interface is being developed on macOS. The intended production target is Windows 11. The Byparr engine, Windows service lifecycle, installer, and Prowlarr/Jackett integration workflows are **not yet implemented** by this interface. The dashboard's disabled service buttons are deliberate placeholders.
+- Start, stop and restart the local Byparr engine.
+- Check API connectivity and Browser Health.
+- View and export timestamped application and engine logs.
+- Check Prowlarr and qBittorrent connectivity.
+- Run Prowlarr integration diagnostics.
+- Store integration credentials using Windows Credential Manager.
 
-The API check targets the saved host and port (default `http://127.0.0.1:8191/openapi.json`). Settings are stored locally using Qt's platform settings store and validated before saving. Prowlarr and Jackett API keys are stored separately in the operating-system credential vault via Python Keyring; the Manager does not write those keys to its settings file. Only native macOS Keychain, Windows Credential Manager, Secret Service, and KWallet backends are accepted. If a supported vault is unavailable, saving fails rather than falling back to plaintext. The check only reports whether the OpenAPI endpoint responds; it does not prove browser challenge solving works.
+## First run
 
-## Requirements
+1. Launch Byparr Manager.
+2. On the Dashboard, check the API and Browser Health indicators.
+3. Open Integrations and test Prowlarr and qBittorrent if configured.
+4. In Prowlarr, test an indexer configured to use Byparr, then try a search.
+5. If something fails, open Logs and export the relevant diagnostic output.
 
-- Python 3.12 or newer
-- `uv` (recommended) or `pip`
-- macOS can be used for interface development and preview.
-- Windows 11 is required to validate the final service and installer behaviour.
+The Manager launches the engine locally by default. Keep the API bound to localhost unless you intentionally need trusted network access and understand the exposure.
 
-## Run on macOS
+## Reporting problems
 
-From the repository root:
+This is beta software maintained by one person in spare time. Reports and testing feedback are welcome, but response times are not guaranteed.
 
-```bash
-cd manager
-uv sync
-uv run python main.py
-```
+- Bug reports: https://github.com/The-Real-ViX/Windows-Byparr-Installer/issues/new?template=bug_report.yml
+- Feature requests: https://github.com/The-Real-ViX/Windows-Byparr-Installer/issues/new?template=feature_request.yml
+- Testing guide: https://github.com/The-Real-ViX/Windows-Byparr-Installer/blob/main/docs/BETA_TESTING.md
 
-If you prefer pip:
+Include the Manager version/build, Windows version, steps to reproduce, and expected versus actual behaviour.
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -e .
-python main.py
-```
+**Before sharing logs or screenshots, remove API keys, passwords, cookies, tokens, private tracker URLs, usernames, local paths, IP addresses and other personal information. Never post secrets or suspected security vulnerabilities in a public issue.** See the repository's SECURITY.md.
 
-## Development checks
+## Project status and attribution
 
-From the `manager` directory:
+This is a community beta, not a finished or officially supported Byparr release. The upstream Byparr engine is authored by ThePhaseless. This Manager is an independent project and is not affiliated with or endorsed by the upstream author.
 
-```bash
-uv sync --extra dev
-uv run ruff check .
-uv run python -m compileall -q .
-```
-
-## Planned next steps
-
-1. Separate UI pages and shared widgets into maintainable modules.
-2. Add structured application logging and diagnostics without recording secrets.
-3. Implement a Windows runtime supervisor and service lifecycle behind a platform-specific boundary.
-4. Add Prowlarr and Jackett server addresses and connection tests.
-5. Package and test the application on Windows 11.
+See the repository's LICENSE and THIRD_PARTY_NOTICES.md for licence and attribution information. Binary distribution is subject to completion of the release dependency and licence inventory.

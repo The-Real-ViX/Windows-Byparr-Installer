@@ -1,0 +1,213 @@
+name: Windows application build
+
+on:
+  push:
+    branches:
+      - "**"
+    paths:
+      - "manager/**"
+      - "installer/**"
+      - ".github/workflows/windows-build.yml"
+  pull_request:
+    paths:
+      - "manager/**"
+      - "installer/**"
+      - ".github/workflows/windows-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-build:
+    name: Test and package Windows application
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: manager
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: manager/pyproject.toml
+
+      - name: Install application and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          python -m pip install pyinstaller pillow
+
+      - name: Apply Ruff import formatting
+        run: python -m ruff check --fix .
+
+      - name: Run lint checks
+        run: python -m ruff check .
+
+      - name: Run automated tests
+        run: python -m pytest
+        env:
+          QT_QPA_PLATFORM: offscreen
+
+      - name: Generate versioned build identity
+        id: build_identity
+        shell: pwsh
+        run: |
+          $env:APP_VERSION = python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])"
+          python -c "import os, pathlib; pathlib.Path('build_info.py').write_text('APP_VERSION = ' + repr(os.environ['APP_VERSION']) + '\nBUILD_NUMBER = ' + repr(os.environ['GITHUB_RUN_NUMBER']) + '\n', encoding='utf-8')"
+          "version=$env:APP_VERSION" >> $env:GITHUB_OUTPUT
+          Get-Content build_info.py
+
+      - name: Generate the branded Windows icon
+        run: python create_icon.py
+
+      - name: Build Windows desktop application
+        run: >
+          python -m PyInstaller
+          --noconfirm
+          --clean
+          --windowed
+          --name ByparrManager
+          --icon assets/byparr-manager.ico
+          --collect-all PySide6
+          --collect-all keyring
+          --collect-all win32ctypes
+          --hidden-import win32timezone
+          --hidden-import win32ctypes.pywin32.win32cred
+          --hidden-import win32ctypes.pywin32.pywintypes
+          --collect-all httpx
+          main.py
+
+      - name: Verify packaged Windows Credential Manager integration
+        shell: pwsh
+        run: |
+          $manager = Join-Path $env:GITHUB_WORKSPACE "manager\dist\ByparrManager\ByparrManager.exe"
+          if (-not (Test-Path $manager)) { throw "Packaged Manager executable not found: $manager" }
+          $process = Start-Process -FilePath $manager -ArgumentList "--credential-smoke-test" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Packaged credential-vault test failed with exit code $($process.ExitCode)." }
+          Write-Host "SUCCESS: packaged Manager saved, read, and deleted a Windows Credential Manager test entry."
+
+      - name: Include project licence and notices
+        shell: pwsh
+        run: |
+          Copy-Item ..\LICENSE .\dist\ByparrManager\LICENSE.txt
+          Copy-Item ..\THIRD_PARTY_NOTICES.md .\dist\ByparrManager\THIRD_PARTY_NOTICES.md
+          Copy-Item .\README.md .\dist\ByparrManager\Manager-README.md
+
+      - name: Set up uv for the bundled engine
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: false
+
+      - name: Download pinned Byparr source
+        shell: pwsh
+        run: ..\scripts\Get-Upstream.ps1
+
+      - name: Set up Python 3.14 for the engine
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install locked Byparr engine dependencies
+        working-directory: vendor/Byparr
+        shell: pwsh
+        run: uv sync --locked
+
+      - name: Fetch verified browser runtime into the application
+        working-directory: vendor/Byparr
+        shell: pwsh
+        env:
+          INVISIBLE_PLAYWRIGHT_ENGINE_DIR: ${{ github.workspace }}\manager\dist\ByparrManager\engine\browser-engine
+          INVISIBLE_PLAYWRIGHT_CACHE_DIR: ${{ runner.temp }}\ByparrManager-CI\browser-cache
+        run: |
+          New-Item -ItemType Directory -Force -Path $env:INVISIBLE_PLAYWRIGHT_ENGINE_DIR, $env:INVISIBLE_PLAYWRIGHT_CACHE_DIR | Out-Null
+          uv run python -m invisible_playwright fetch
+
+      - name: Install engine packager
+        working-directory: vendor/Byparr
+        shell: pwsh
+        run: uv pip install --python .venv\Scripts\python.exe pyinstaller
+
+      - name: Package Byparr engine as a standalone Windows executable
+        working-directory: vendor/Byparr
+        shell: pwsh
+        run: |
+          $engineOutput = Join-Path $env:GITHUB_WORKSPACE "manager\dist\ByparrManager\engine"
+          $engineWork = Join-Path $env:RUNNER_TEMP "byparr-engine-pyinstaller"
+          uv run python -m PyInstaller --noconfirm --clean --onedir --name ByparrEngine --distpath $engineOutput --workpath $engineWork --collect-all invisible_playwright --collect-all invisible_core --collect-all playwright --collect-all playwright_captcha --collect-all fastapi --collect-all pydantic --collect-all pydantic_settings --collect-all trafilatura --collect-all tzlocal main.py
+
+      - name: Smoke test the packaged engine and bundled browser
+        shell: pwsh
+        env:
+          INVISIBLE_PLAYWRIGHT_ENGINE_DIR: ${{ github.workspace }}\manager\dist\ByparrManager\engine\browser-engine
+          INVISIBLE_PLAYWRIGHT_CACHE_DIR: ${{ runner.temp }}\ByparrManager-CI\browser-cache
+          HOST: 127.0.0.1
+          PORT: "8191"
+          BROWSER_LOCALE: en-GB
+          BROWSER_TIMEZONE: Europe/London
+        run: |
+          $engine = Join-Path $env:GITHUB_WORKSPACE "manager\dist\ByparrManager\engine\ByparrEngine\ByparrEngine.exe"
+          $stdout = Join-Path $env:RUNNER_TEMP "packaged-engine.stdout.log"
+          $stderr = Join-Path $env:RUNNER_TEMP "packaged-engine.stderr.log"
+          if (-not (Test-Path $engine)) { throw "Packaged engine executable was not created: $engine" }
+          $process = Start-Process -FilePath $engine -WorkingDirectory (Split-Path $engine) -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          try {
+              $ready = $false
+              for ($attempt = 1; $attempt -le 90; $attempt++) {
+                  Start-Sleep -Seconds 2
+                  if ($process.HasExited) { throw "Packaged engine exited with code $($process.ExitCode)." }
+                  try {
+                      $response = Invoke-WebRequest -Uri "http://127.0.0.1:8191/openapi.json" -TimeoutSec 3
+                      if ($response.StatusCode -eq 200) { $ready = $true; break }
+                  } catch { }
+              }
+              if (-not $ready) { throw "Packaged engine did not become ready within 180 seconds." }
+              Write-Host "SUCCESS: packaged Byparr executable and bundled browser returned HTTP 200."
+          } catch {
+              Write-Host "----- packaged engine stdout -----"
+              if (Test-Path $stdout) { Get-Content $stdout }
+              Write-Host "----- packaged engine stderr -----"
+              if (Test-Path $stderr) { Get-Content $stderr }
+              throw
+          } finally {
+              if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+          }
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $compiler)) { throw "Inno Setup compiler not found: $compiler" }
+          $version = python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])"
+          $buildNumber = $env:GITHUB_RUN_NUMBER
+          & $compiler "/DAppVersion=$version" "/DBuildNumber=$buildNumber" "..\installer\ByparrManager.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
+
+      - name: Upload Windows portable build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ByparrManager-Windows-x64-Portable-v${{ steps.build_identity.outputs.version }}-build-${{ github.run_number }}
+          path: manager/dist/ByparrManager/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ByparrManager-Windows-x64-Installer-v${{ steps.build_identity.outputs.version }}-build-${{ github.run_number }}
+          path: manager/installer-output/ByparrManager-Setup-v*-build-${{ github.run_number }}-x64.exe
+          if-no-files-found: error
+          retention-days: 14

@@ -28,6 +28,23 @@ The checked source currently defines:
 
 **Important health-check distinction:** `/health` is not a lightweight process check. It launches browser work and can fail because the browser runtime or target site is unavailable. The manager should report separate states for (1) process/service running, (2) HTTP API reachable, and (3) browser challenge operation verified. A successful `/docs` or `/openapi.json` request proves API reachability, not that challenge solving works.
 
+## Prowlarr, Jackett and network address-family troubleshooting
+
+Cloudflare may bind a clearance cookie to the public IP address that solved the challenge. If Byparr and the application making the follow-up request (such as Prowlarr or Jackett) reach the target through different public IP addresses, the follow-up request can be rejected even though Byparr reports that the challenge was solved.
+
+This can happen in container deployments where IPv6 is enabled for one container/network but not the other. When investigating this symptom:
+
+1. Check whether Byparr and Prowlarr/Jackett use the same outbound proxy and public IP address.
+2. Check whether one container uses IPv4 while the other uses IPv6.
+3. If the deployment is affected, configure both services and their Docker network consistently. Disabling IPv6 may be a targeted workaround for the affected containers/network, but should not be applied globally without understanding the wider network impact.
+4. Re-test the same indexer after the network paths match.
+
+This is primarily relevant to split/container deployments. A normal local Windows installation should not disable IPv6 just because this note exists. See the upstream [IPv6 troubleshooting proposal #425](https://github.com/ThePhaseless/Byparr/pull/425); it remains an open proposal as of 17 November 2026, so this document records the diagnostic concept rather than claiming the change is in the pinned engine.
+
+## Upstream proposals under review
+
+See [UPSTREAM_PROPOSAL_REVIEW.md](UPSTREAM_PROPOSAL_REVIEW.md) for the decisions on the current upstream proposals, including the proposed `waitInSeconds` request option, Playwright dependency updates, Python 3.15, and HTTP/3/concurrency work.
+
 ## Prowlarr and Jackett integration caution
 
 Do not assume that Byparr's `POST /v1` contract is identical to the FlareSolverr API contract simply because Prowlarr supports FlareSolverr-compatible integrations. The checked Byparr endpoint uses its own `LinkRequest`/`LinkResponse` models. Before implementing a Prowlarr wizard, compare the exact request/response schemas expected by the current Prowlarr release with the pinned Byparr release.

@@ -17,6 +17,7 @@ This roadmap describes intended work; unchecked items are not implemented yet.
 - [ ] Add service lifecycle management, logs and safe shutdown.
 
 ## Phase 3 — Manager application
+- [x] Add opt-in Tailscale-only API binding and connection status to the Manager.
 - [ ] Polish Windows 11 dark control-centre UI and RedHeX branding.
 - [ ] Dashboard, service controls, configuration, logs and diagnostics.
 - [ ] About/Credits and licence notices.
