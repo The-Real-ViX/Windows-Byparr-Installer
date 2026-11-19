@@ -244,10 +244,15 @@ class EngineController(QObject):
             self._set_status("Failed to start")
 
     def shutdown(self) -> None:
-        """Stop the child process before the Manager exits."""
+        """Stop background probes and the child process before the Manager exits."""
         self._restart_after_stop = False
         self._stop_timeout_timer.stop()
         self.health_timer.stop()
+        if self._health_worker is not None and self._health_worker.isRunning():
+            # The probe has a sub-second network timeout; wait so Qt never
+            # destroys a controller while its child QThread is still running.
+            self._health_worker.wait(1000)
+        self._health_worker = None
         if self.is_running:
             self.process.terminate()
             if not self.process.waitForFinished(2500):
