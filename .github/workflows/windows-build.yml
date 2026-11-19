@@ -154,6 +154,36 @@ jobs:
           if (-not (Test-Path $enginePython)) { throw "Pinned engine virtual environment not found for SBOM generation." }
           python -m cyclonedx_py environment $enginePython --pyproject ..\vendor\Byparr\pyproject.toml --gather-license-texts --output-file dist\ByparrManager\SBOM-byparr-engine.cdx.json
 
+      - name: Create machine-readable license review report
+        shell: pwsh
+        run: |
+          $review = [System.Collections.Generic.List[object]]::new()
+          $bomPaths = @(
+            "dist\ByparrManager\SBOM-manager-runtime.cdx.json",
+            "dist\ByparrManager\SBOM-byparr-engine.cdx.json"
+          )
+          foreach ($bomPath in $bomPaths) {
+            $bom = Get-Content -LiteralPath $bomPath -Raw | ConvertFrom-Json
+            foreach ($component in $bom.components) {
+              $declared = @()
+              foreach ($entry in @($component.licenses)) {
+                if ($entry.license.id) { $declared += $entry.license.id }
+                elseif ($entry.license.name) { $declared += $entry.license.name }
+                elseif ($entry.expression) { $declared += $entry.expression }
+              }
+              $review.Add([PSCustomObject]@{
+                sbom = [System.IO.Path]::GetFileName($bomPath)
+                name = $component.name
+                version = $component.version
+                purl = $component.purl
+                declared_licenses = ($declared -join " OR ")
+                review_status = if ($declared.Count) { "HUMAN_REVIEW_REQUIRED" } else { "LICENSE_NOT_DETECTED" }
+              })
+            }
+          }
+          $review | Sort-Object sbom,name,version -Unique | Export-Csv -NoTypeInformation -Encoding utf8 "dist\ByparrManager\LICENSE-REVIEW-REQUIRED.csv"
+          Write-Host ("Generated license review rows: {0}" -f $review.Count)
+          Write-Host ("Components without detected license metadata: {0}" -f (@($review | Where-Object review_status -eq "LICENSE_NOT_DETECTED").Count))
       - name: Inventory bundled browser runtime files
         shell: pwsh
         run: |
@@ -233,6 +263,34 @@ jobs:
           & $compiler "/DAppVersion=$version" "/DBuildNumber=$buildNumber" "..\installer\ByparrManager.iss"
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
 
+      - name: Prepare pinned Byparr corresponding-source archive
+        shell: pwsh
+        run: |
+          $sourceRoot = Join-Path $env:GITHUB_WORKSPACE "vendor\Byparr"
+          $sourceOutput = Join-Path $env:GITHUB_WORKSPACE "manager\source-output"
+          if (-not (Test-Path (Join-Path $sourceRoot "LICENSE"))) { throw "Pinned Byparr source licence is missing." }
+          New-Item -ItemType Directory -Force -Path $sourceOutput | Out-Null
+          $archive = Join-Path $sourceOutput "Byparr-GPL-3.0-Corresponding-Source-c81385f59ec978ef81909a273e514ca6d9ace2a9.zip"
+          $sourceItems = Get-ChildItem -LiteralPath $sourceRoot -Force | Where-Object { $_.Name -notin @(".venv", "__pycache__") }
+          Compress-Archive -Path $sourceItems.FullName -DestinationPath $archive -CompressionLevel Optimal
+          Copy-Item ..\UPSTREAM.lock.json $sourceOutput\UPSTREAM.lock.json
+          Copy-Item ..\scripts\Get-Upstream.ps1 $sourceOutput\Get-Upstream.ps1
+          @"
+          Byparr corresponding source archive
+          Upstream: https://github.com/ThePhaseless/Byparr
+          Pinned commit: c81385f59ec978ef81909a273e514ca6d9ace2a9
+          Licence: GPL-3.0 (see LICENSE inside the archive)
+          This archive contains the pinned upstream source used to build the bundled Byparr engine.
+          Manager project source and build scripts: https://github.com/The-Real-ViX/Windows-Byparr-Installer
+          "@ | Set-Content -LiteralPath "$sourceOutput\SOURCE-BUNDLE-README.txt" -Encoding utf8
+
+      - name: Upload corresponding source bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: ByparrManager-Byparr-GPL-3.0-Corresponding-Source-${{ github.sha }}
+          path: manager/source-output/
+          if-no-files-found: error
+          retention-days: 30
       - name: Create package size audit report
         shell: pwsh
         run: |
