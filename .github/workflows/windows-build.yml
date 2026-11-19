@@ -318,6 +318,40 @@ jobs:
           $lines | Set-Content -LiteralPath $report -Encoding utf8
           Get-Content -LiteralPath $report
           
+      - name: Assemble release-candidate evidence bundle and checksums
+        shell: pwsh
+        run: |
+          $version = python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])"
+          $stage = Join-Path $env:GITHUB_WORKSPACE "manager\release-candidate"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          $installer = Get-ChildItem -LiteralPath "installer-output" -Filter "*-build-$env:GITHUB_RUN_NUMBER-x64.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Built Windows installer not found for this workflow run." }
+          Copy-Item -LiteralPath $installer.FullName -Destination $stage
+          $portableZip = Join-Path $stage "ByparrManager-Windows-x64-Portable-v$version-build-$env:GITHUB_RUN_NUMBER.zip"
+          Compress-Archive -Path "dist\ByparrManager\*" -DestinationPath $portableZip -CompressionLevel Optimal
+          $sourceArchive = Get-ChildItem -LiteralPath "source-output" -Filter "*.zip" | Select-Object -First 1
+          if (-not $sourceArchive) { throw "Pinned Byparr corresponding-source archive not found." }
+          Copy-Item -LiteralPath $sourceArchive.FullName -Destination $stage
+          Copy-Item "dist\ByparrManager\SBOM-*.json" $stage
+          Copy-Item "dist\ByparrManager\LICENSE-REVIEW-REQUIRED.csv" $stage
+          Copy-Item "dist\ByparrManager\THIRD_PARTY_NOTICES.md" $stage
+          Copy-Item "dist\ByparrManager\LICENSE.txt" $stage
+          Copy-Item "dist\ByparrManager\Manager-README.md" $stage
+          Copy-Item "dist\ByparrManager\SBOM-browser-runtime-files.json" $stage
+          $hashLines = Get-ChildItem -LiteralPath $stage -File | Where-Object Name -ne "SHA256SUMS.txt" | Sort-Object Name | ForEach-Object {
+            $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)"
+          }
+          $hashLines | Set-Content -LiteralPath (Join-Path $stage "SHA256SUMS.txt") -Encoding ascii
+          Get-Content (Join-Path $stage "SHA256SUMS.txt")
+
+      - name: Upload release-candidate evidence bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: ByparrManager-Release-Candidate-v${{ steps.build_identity.outputs.version }}-build-${{ github.run_number }}
+          path: manager/release-candidate/
+          if-no-files-found: error
+          retention-days: 30
       - name: Upload package size audit
         uses: actions/upload-artifact@v4
         with:
