@@ -24,6 +24,32 @@ def is_routine_api_probe_log_line(line: str) -> bool:
     return '"GET /openapi.json HTTP/' in text and text.endswith("200 OK")
 
 
+class ApiHealthCheckWorker(QThread):
+    """Probe the local Byparr API without blocking the Manager interface."""
+
+    result = Signal(object, int)
+
+    def __init__(self, port: int, parent=None):
+        super().__init__(parent)
+        self.port = port
+
+    def run(self) -> None:
+        started = time.perf_counter()
+        status_code = None
+        try:
+            response = httpx.get(
+                f"http://127.0.0.1:{self.port}/openapi.json",
+                timeout=0.8,
+                follow_redirects=False,
+                trust_env=False,
+            )
+            status_code = response.status_code
+        except httpx.RequestError:
+            pass
+        elapsed = round((time.perf_counter() - started) * 1000)
+        self.result.emit(status_code, elapsed)
+
+
 class EngineController(QObject):
     """Start, monitor, stop, and restart the bundled Byparr engine."""
 
@@ -54,6 +80,7 @@ class EngineController(QObject):
         self.health_timer = QTimer(self)
         self.health_timer.setInterval(1500)
         self.health_timer.timeout.connect(self._check_health)
+        self._health_worker = None
 
     @staticmethod
     def _application_root() -> Path:
@@ -149,28 +176,41 @@ class EngineController(QObject):
         if not self.is_running:
             self.health_timer.stop()
             return
-        try:
-            started = time.perf_counter()
-            response = httpx.get(
-                f"http://127.0.0.1:{self.port}/openapi.json",
-                timeout=0.4,
-                follow_redirects=False,
-                trust_env=False,
-            )
-            if response.status_code == 200:
-                self._set_status("Running")
-                if not self._api_ready_logged:
-                    elapsed = round((time.perf_counter() - started) * 1000)
-                    self.log_message.emit(format_api_diagnostic(
-                        "Byparr startup API", True, response.status_code,
-                        elapsed, "OpenAPI endpoint ready",
-                    ))
-                    self._api_ready_logged = True
-            elif self._status != "Starting":
-                self._set_status("Starting")
-        except httpx.RequestError:
-            if self._status == "Running":
-                self._set_status("Starting")
+        if self._health_worker is not None and self._health_worker.isRunning():
+            return
+        worker = ApiHealthCheckWorker(self.port, self)
+        self._health_worker = worker
+        worker.result.connect(self._on_health_result)
+        worker.finished.connect(self._on_health_worker_finished)
+        worker.finished.connect(worker.deleteLater)
+        worker.start()
+
+    def _on_health_worker_finished(self) -> None:
+        self._health_worker = None
+
+    def _on_health_result(self, status_code, elapsed: int) -> None:
+        # A late probe must never mark an already-stopped engine as Running.
+        if not self.is_running:
+            return
+        if status_code == 200:
+            self._set_status("Running")
+            if not self._api_ready_logged:
+                self.log_message.emit(format_api_diagnostic(
+                    "Byparr startup API", True, status_code,
+                    elapsed, "OpenAPI endpoint ready",
+                ))
+                self._api_ready_logged = True
+            # Startup needs rapid retries; steady-state monitoring does not.
+            self.health_timer.setInterval(30_000)
+            if not self.health_timer.isActive():
+                self.health_timer.start()
+        elif self._api_ready_logged:
+            self._set_status("API unavailable")
+            self.health_timer.setInterval(10_000)
+            if not self.health_timer.isActive():
+                self.health_timer.start()
+        else:
+            self._set_status("Starting")
 
     def _read_output(self) -> None:
         output = bytes(self.process.readAllStandardOutput()).decode(
