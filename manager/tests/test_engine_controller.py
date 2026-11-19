@@ -2,7 +2,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QProcess, QStandardPaths
 
-from engine_controller import EngineController, is_routine_api_probe_log_line
+from engine_controller import ApiHealthCheckWorker, EngineController, is_routine_api_probe_log_line
 
 
 def test_engine_executable_is_relative_to_application_root(tmp_path: Path):
@@ -85,3 +85,17 @@ def test_engine_health_polling_slows_after_api_is_ready(monkeypatch):
     controller._on_health_result(200, 15)
     assert controller._status == "Running"
     assert controller.health_timer.interval() == 30_000
+
+def test_api_health_probe_runs_in_worker_thread(qtbot, monkeypatch):
+    class Response:
+        status_code = 200
+
+    monkeypatch.setattr("engine_controller.httpx.get", lambda *args, **kwargs: Response())
+    worker = ApiHealthCheckWorker(8191)
+
+    with qtbot.waitSignal(worker.result, timeout=2000) as signal:
+        worker.start()
+
+    worker.wait(1000)
+    assert signal.args[0] == 200
+    assert signal.args[1] >= 0
