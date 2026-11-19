@@ -1,6 +1,6 @@
 import httpx
 
-from arr_integrations import ARR_APPS, check_arr_connection, validate_arr_url
+from arr_integrations import ARR_APPS, check_arr_connection, check_arr_connection_detailed, validate_arr_url
 
 
 def test_arr_app_api_prefixes_and_default_ports():
@@ -72,3 +72,20 @@ def test_check_arr_connection_handles_unreachable_service(monkeypatch):
         False,
         "Could not reach the application",
     )
+
+
+def test_detailed_arr_check_reports_http_status_and_duration(monkeypatch):
+    class Response:
+        status_code = 200
+
+        def json(self):
+            return {"version": "6.4.4"}
+
+    monkeypatch.setattr(httpx, "get", lambda *args, **kwargs: Response())
+    ok, message, status_code, elapsed_ms = check_arr_connection_detailed(
+        "http://127.0.0.1:7878", "key", "radarr"
+    )
+    assert ok
+    assert message == "Connected (version 6.4.4)"
+    assert status_code == 200
+    assert elapsed_ms >= 0
