@@ -1,9 +1,6 @@
 """Cross-platform desktop entry point for Byparr Manager."""
 
 import ipaddress
-import logging
-from logging.handlers import RotatingFileHandler
-import os
 import re
 import secrets
 import threading
@@ -12,47 +9,6 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-
-
-def configure_startup_logger():
-    """Create a rotating startup and activity log before Qt starts."""
-    if os.name == "nt":
-        # Respect Windows Desktop redirection, including OneDrive-managed desktops.
-        desktop = None
-        try:
-            import winreg
-
-            with winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER,
-                r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders",
-            ) as key:
-                desktop_value, _ = winreg.QueryValueEx(key, "Desktop")
-            desktop = Path(os.path.expandvars(desktop_value))
-        except (OSError, ImportError):
-            desktop = Path.home() / "Desktop"
-        log_dir = desktop / "ByparrManager-Logs"
-    else:
-        base = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
-        log_dir = base / "RedHeX" / "ByparrManager" / "logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / "ByparrManager-startup.log"
-    handler = RotatingFileHandler(
-        log_path, maxBytes=2 * 1024 * 1024, backupCount=3, encoding="utf-8"
-    )
-    handler.setFormatter(logging.Formatter(
-        "%(asctime)s %(levelname)s [%(threadName)s] %(message)s"
-    ))
-    root = logging.getLogger()
-    root.setLevel(logging.INFO)
-    root.handlers.clear()
-    root.addHandler(handler)
-    logger = logging.getLogger("byparr_manager")
-    logger.info("Startup diagnostics initialised.")
-    logger.info("Diagnostic log location: %s", log_path)
-    return logger, log_path
-
-
-STARTUP_LOGGER, STARTUP_LOG_PATH = configure_startup_logger()
 
 
 import httpx
@@ -1683,11 +1639,7 @@ if __name__ == "__main__":
         sys.exit(run_credential_smoke_test())
     if "--full-uninstall-cleanup" in sys.argv:
         sys.exit(run_full_uninstall_cleanup())
-    STARTUP_LOGGER.info("Creating Qt application.")
     app = QApplication(sys.argv)
-    STARTUP_LOGGER.info("Creating Byparr Manager main window (build %s).", BUILD_NUMBER)
     window = ByparrManager()
-    STARTUP_LOGGER.info("Main window created successfully.")
     window.show()
-    STARTUP_LOGGER.info("Main window displayed; entering Qt event loop.")
     sys.exit(app.exec())
