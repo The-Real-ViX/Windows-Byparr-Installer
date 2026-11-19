@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 
 import httpx
+from api_diagnostics import format_api_diagnostic
 from PySide6.QtCore import (
     QObject,
     QProcess,
@@ -36,6 +38,7 @@ class EngineController(QObject):
         self.port = 8191
         self._status = "Stopped"
         self._restart_after_stop = False
+        self._api_ready_logged = False
         self._stop_timeout_timer = QTimer(self)
         self._stop_timeout_timer.setSingleShot(True)
         self._stop_timeout_timer.setInterval(12_000)
@@ -106,6 +109,7 @@ class EngineController(QObject):
         self.process.setProcessEnvironment(environment)
         self.process.setWorkingDirectory(str(executable.parent))
         self._restart_after_stop = False
+        self._api_ready_logged = False
         self._set_status("Starting")
         self.log_message.emit("Starting the bundled Byparr engine...")
         self.process.start(str(executable), [])
@@ -146,12 +150,22 @@ class EngineController(QObject):
             self.health_timer.stop()
             return
         try:
+            started = time.perf_counter()
             response = httpx.get(
                 f"http://127.0.0.1:{self.port}/openapi.json",
                 timeout=0.4,
+                follow_redirects=False,
+                trust_env=False,
             )
             if response.status_code == 200:
                 self._set_status("Running")
+                if not self._api_ready_logged:
+                    elapsed = round((time.perf_counter() - started) * 1000)
+                    self.log_message.emit(format_api_diagnostic(
+                        "Byparr startup API", True, response.status_code,
+                        elapsed, "OpenAPI endpoint ready",
+                    ))
+                    self._api_ready_logged = True
             elif self._status != "Starting":
                 self._set_status("Starting")
         except httpx.RequestError:
@@ -176,6 +190,7 @@ class EngineController(QObject):
             self.log_message.emit(f"Byparr engine exited (code {exit_code}).")
         should_restart = self._restart_after_stop
         self._restart_after_stop = False
+        self._api_ready_logged = False
         self._set_status("Stopped")
         if should_restart:
             QTimer.singleShot(500, self.start)
