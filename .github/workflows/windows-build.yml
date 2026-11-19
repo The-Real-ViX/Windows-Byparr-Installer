@@ -196,6 +196,41 @@ jobs:
           & $compiler "/DAppVersion=$version" "/DBuildNumber=$buildNumber" "..\installer\ByparrManager.iss"
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
 
+      - name: Create package size audit report
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:GITHUB_WORKSPACE "manager\dist\ByparrManager"
+          $report = Join-Path $env:GITHUB_WORKSPACE "manager\package-size-audit.txt"
+          if (-not (Test-Path $root)) { throw "Packaged application folder not found: $root" }
+          $files = Get-ChildItem -LiteralPath $root -File -Recurse
+          $total = ($files | Measure-Object -Property Length -Sum).Sum
+          $lines = [System.Collections.Generic.List[string]]::new()
+          $lines.Add("Byparr Manager package size audit")
+          $lines.Add("Build: $env:GITHUB_RUN_NUMBER")
+          $lines.Add("Commit: $env:GITHUB_SHA")
+          $lines.Add(("Total files: {0}" -f $files.Count))
+          $lines.Add(("Total bytes: {0:N0}" -f $total))
+          $lines.Add("")
+          $lines.Add("Largest 50 files:")
+          $lines.Add(($files | Sort-Object Length -Descending | Select-Object -First 50 | ForEach-Object { "{0,14:N0}  {1}" -f $_.Length, $_.FullName.Substring($root.Length + 1) }))
+          $lines.Add("")
+          $lines.Add("Largest top-level folders:")
+          $lines.Add((Get-ChildItem -LiteralPath $root -Directory | ForEach-Object {
+            $folder = $_
+            $bytes = (Get-ChildItem -LiteralPath $folder.FullName -File -Recurse | Measure-Object -Property Length -Sum).Sum
+            [PSCustomObject]@{ Bytes = [long]$bytes; Folder = $folder.Name }
+          } | Sort-Object Bytes -Descending | ForEach-Object { "{0,14:N0}  {1}" -f $_.Bytes, $_.Folder }))
+          $lines | Set-Content -LiteralPath $report -Encoding utf8
+          Get-Content -LiteralPath $report
+          
+      - name: Upload package size audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: ByparrManager-Package-Size-Audit-build-${{ github.run_number }}
+          path: manager/package-size-audit.txt
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Upload Windows portable build
         uses: actions/upload-artifact@v4
         with:
