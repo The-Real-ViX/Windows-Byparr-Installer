@@ -1,6 +1,6 @@
 # Community beta testing guide
 
-Byparr Manager v0.4.0 is a beta. The maintainer has tested the current Windows build on one Windows 11 PC, including the dashboard checks, Prowlarr connection, qBittorrent connection, an indexer test through Byparr, and a real Prowlarr search. Community testing is needed across other PCs and configurations.
+Byparr Manager v0.5.0 is a beta. The maintainer has tested the current Windows build on one Windows 11 PC, including the dashboard checks, Prowlarr connection, qBittorrent connection, an indexer test through Byparr, and a real Prowlarr search. Community testing is needed across other PCs and configurations.
 
 ## Suggested test pass
 
