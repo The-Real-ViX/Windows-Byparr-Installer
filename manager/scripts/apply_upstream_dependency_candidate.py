@@ -4,7 +4,19 @@ import subprocess
 import tomllib
 from pathlib import Path
 
-PROJECT = (Path(__file__).resolve().parents[2] / "vendor" / "Byparr")
+SCRIPT_PATH = Path(__file__).resolve()
+PROJECT_CANDIDATES = (
+    SCRIPT_PATH.parents[2] / "vendor" / "Byparr",
+    SCRIPT_PATH.parents[1] / "vendor" / "Byparr",
+)
+VALID_PROJECTS = [path for path in PROJECT_CANDIDATES if (path / "pyproject.toml").is_file()]
+if len(VALID_PROJECTS) != 1:
+    searched = ", ".join(str(path) for path in PROJECT_CANDIDATES)
+    raise SystemExit(
+        "Expected exactly one downloaded Byparr project with pyproject.toml; "
+        f"found {len(VALID_PROJECTS)}. Searched: {searched}"
+    )
+PROJECT = VALID_PROJECTS[0]
 PYPROJECT = PROJECT / "pyproject.toml"
 
 replacements = {
