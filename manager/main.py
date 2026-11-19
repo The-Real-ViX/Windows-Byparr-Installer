@@ -15,7 +15,7 @@ from pathlib import Path
 
 
 def configure_startup_logger():
-    """Create a rotating diagnostic log before Qt or the main window starts."""
+    """Create a rotating startup and activity log before Qt starts."""
     if os.name == "nt":
         # Respect Windows Desktop redirection, including OneDrive-managed desktops.
         desktop = None
@@ -54,28 +54,6 @@ def configure_startup_logger():
 
 STARTUP_LOGGER, STARTUP_LOG_PATH = configure_startup_logger()
 
-
-def _log_uncaught_exception(exc_type, exc_value, exc_traceback):
-    if issubclass(exc_type, KeyboardInterrupt):
-        sys.__excepthook__(exc_type, exc_value, exc_traceback)
-        return
-    STARTUP_LOGGER.critical(
-        "Uncaught application exception",
-        exc_info=(exc_type, exc_value, exc_traceback),
-    )
-
-
-sys.excepthook = _log_uncaught_exception
-
-
-def _log_uncaught_thread_exception(args):
-    STARTUP_LOGGER.critical(
-        "Uncaught worker-thread exception",
-        exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
-    )
-
-
-threading.excepthook = _log_uncaught_thread_exception
 
 import httpx
 from PySide6.QtCore import QObject, QSettings, QStandardPaths, Qt, QThread, Signal
