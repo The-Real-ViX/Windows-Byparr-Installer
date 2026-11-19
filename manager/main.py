@@ -36,6 +36,7 @@ from arr_integrations import ARR_APPS, ArrIntegrationCheckWorker, validate_arr_u
 from engine_controller import EngineController, is_routine_api_probe_log_line
 from prowlarr_check import ProwlarrIntegrationCheckWorker
 from prowlarr_search import ProwlarrSearchClient
+from radarr_releases import RadarrReleaseClient
 from secret_store import SecretStorageError, SecretStore
 from remote_access import (
     RemoteDashboardServer,
@@ -182,6 +183,7 @@ class ByparrManager(QMainWindow):
         self.remote_action_bridge.log_requested.connect(self.append_log)
         self.remote_server = None
         self.prowlarr_search_client = None
+        self.radarr_release_client = None
         self._prowlarr_client_lock = threading.Lock()
         self.remote_logs = []
         self.remote_engine_status = "Stopped"
@@ -1277,6 +1279,38 @@ class ByparrManager(QMainWindow):
         """Send a selected release to the download client configured inside Prowlarr."""
         return self._remote_prowlarr_client().grab(grab_id)
 
+    def _remote_radarr_client(self):
+        """Reuse the Radarr client so opaque movie and release handles remain valid."""
+        try:
+            api_key = self.secret_store.get("radarr")
+        except SecretStorageError as error:
+            raise RuntimeError("Radarr API key is unavailable.") from error
+        if not api_key:
+            raise RuntimeError("Radarr API key is not saved.")
+        url = self.settings.value(
+            "integrations/radarr_url",
+            f"http://127.0.0.1:{ARR_APPS['radarr']['default_port']}",
+            type=str,
+        )
+        with self._prowlarr_client_lock:
+            client = self.radarr_release_client
+            if client is None or client.base_url != url.rstrip("/") or client.api_key != api_key:
+                client = RadarrReleaseClient(url, api_key)
+                self.radarr_release_client = client
+            return client
+
+    def remote_radarr_movie_search(self, query):
+        """Find existing Radarr library movies without exposing internal IDs."""
+        return self._remote_radarr_client().search_movies(query)
+
+    def remote_radarr_release_search(self, movie_handle):
+        """Return Radarr's own release choices for a selected library movie."""
+        return self._remote_radarr_client().search_releases(movie_handle)
+
+    def remote_radarr_grab(self, release_handle):
+        """Grab only the selected Radarr release after explicit remote confirmation."""
+        return self._remote_radarr_client().grab_release(release_handle)
+
     def remote_status_snapshot(self):
         return {
             "engine": self.remote_engine_status,
@@ -1326,7 +1360,10 @@ class ByparrManager(QMainWindow):
                 lambda: self.remote_logs[-100:],
                 self.remote_action_bridge.log_requested.emit,
                 search_handler=self.remote_prowlarr_search,
-            grab_handler=self.remote_prowlarr_grab,
+                grab_handler=self.remote_prowlarr_grab,
+                radarr_movie_search_handler=self.remote_radarr_movie_search,
+                radarr_release_search_handler=self.remote_radarr_release_search,
+                radarr_grab_handler=self.remote_radarr_grab,
             )
             self.remote_server.start()
         except (ValueError, OSError) as error:
