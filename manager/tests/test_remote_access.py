@@ -249,3 +249,203 @@ def test_log_redaction_masks_spaced_api_key_labels():
     line = redact_log_line("API key=never-log-this")
     assert "never-log-this" not in line
     assert "[REDACTED]" in line
+
+
+def _start_test_dashboard(monkeypatch, tmp_path, **overrides):
+    """Start the real HTTP handler on loopback for deterministic security tests."""
+    import socket
+    from remote_access import RemoteDashboardServer
+
+    password = "test-only-password-12345"
+    salt, verifier = password_verifier(password)
+    options = {
+        "host": "100.101.20.30",
+        "port": 8765,
+        "username": "test-user",
+        "salt": salt,
+        "verifier": verifier,
+        "status_provider": lambda: {"engine": "stopped"},
+        "action_handler": lambda _action: None,
+    }
+    options.update(overrides)
+    server = RemoteDashboardServer(**options)
+    # Binding validation is tested separately; the HTTP handler itself is
+    # deliberately exercised over loopback so tests need no Tailscale network.
+    server.host = "127.0.0.1"
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        server.port = probe.getsockname()[1]
+    server.start()
+    return server, password
+
+
+def _dashboard_request(server, method, path, *, body=None, headers=None):
+    import http.client
+    import json
+
+    connection = http.client.HTTPConnection(server.host, server.port, timeout=3)
+    request_headers = {"Host": f"{server.host}:{server.port}"}
+    if body is not None:
+        request_headers["Content-Type"] = "application/json"
+        body = json.dumps(body)
+    request_headers.update(headers or {})
+    connection.request(method, path, body=body, headers=request_headers)
+    response = connection.getresponse()
+    payload = response.read()
+    result = (response.status, dict(response.getheaders()), payload)
+    connection.close()
+    return result
+
+
+def _login_test_dashboard(server, password):
+    import json
+
+    status, headers, body = _dashboard_request(
+        server, "POST", "/login",
+        body={"username": "test-user", "password": password},
+        headers={"Origin": f"http://{server.host}:{server.port}"},
+    )
+    assert status == 200
+    cookie = headers["Set-Cookie"].split(";", 1)[0]
+    token = cookie.split("=", 1)[1]
+    session = server._sessions[token]
+    return cookie, session["csrf"]
+
+
+def test_http_dashboard_login_csrf_logout_and_session_invalidation():
+    from remote_access import RemoteDashboardServer
+
+    server, password = _start_test_dashboard()
+    try:
+        status, _, _ = _dashboard_request(server, "GET", "/api/status")
+        assert status == 401
+
+        cookie, csrf = _login_test_dashboard(server, password)
+        status, headers, body = _dashboard_request(
+            server, "GET", "/api/status", headers={"Cookie": cookie}
+        )
+        assert status == 200
+        assert headers["Cache-Control"] == "no-store"
+        assert headers["X-Content-Type-Options"] == "nosniff"
+
+        status, _, _ = _dashboard_request(
+            server, "POST", "/api/action",
+            body={"action": "start"},
+            headers={
+                "Cookie": cookie,
+                "Origin": f"http://{server.host}:{server.port}",
+            },
+        )
+        assert status == 403  # authenticated but no CSRF token
+
+        status, _, _ = _dashboard_request(
+            server, "POST", "/api/action",
+            body={"action": "start"},
+            headers={
+                "Cookie": cookie,
+                "Origin": f"http://{server.host}:{server.port}",
+                "X-CSRF-Token": csrf,
+            },
+        )
+        assert status == 202
+
+        status, headers, _ = _dashboard_request(
+            server, "POST", "/logout",
+            body={},
+            headers={
+                "Cookie": cookie,
+                "Origin": f"http://{server.host}:{server.port}",
+                "X-CSRF-Token": csrf,
+            },
+        )
+        assert status == 200
+        assert "Max-Age=0" in headers["Set-Cookie"]
+        status, _, _ = _dashboard_request(
+            server, "GET", "/api/status", headers={"Cookie": cookie}
+        )
+        assert status == 401
+    finally:
+        server.stop()
+
+
+def test_http_dashboard_rejects_bad_host_and_origin():
+    server, password = _start_test_dashboard()
+    try:
+        status, _, _ = _dashboard_request(
+            server, "GET", "/", headers={"Host": "attacker.example"}
+        )
+        assert status == 400
+
+        status, _, _ = _dashboard_request(
+            server, "POST", "/login",
+            body={"username": "test-user", "password": password},
+            headers={"Origin": "http://attacker.example"},
+        )
+        assert status == 403
+        assert not server._sessions
+    finally:
+        server.stop()
+
+
+def test_http_dashboard_rejects_oversized_and_transfer_encoded_bodies():
+    server, _ = _start_test_dashboard()
+    try:
+        status, _, _ = _dashboard_request(
+            server, "POST", "/login",
+            body=None,
+            headers={
+                "Origin": f"http://{server.host}:{server.port}",
+                "Content-Length": "8193",
+            },
+        )
+        assert status == 400
+
+        status, _, _ = _dashboard_request(
+            server, "POST", "/login",
+            body=None,
+            headers={
+                "Origin": f"http://{server.host}:{server.port}",
+                "Transfer-Encoding": "chunked",
+            },
+        )
+        assert status == 400
+    finally:
+        server.stop()
+
+
+def test_http_dashboard_login_rate_limit_is_enforced():
+    server, _ = _start_test_dashboard()
+    try:
+        origin = f"http://{server.host}:{server.port}"
+        for _ in range(5):
+            status, _, _ = _dashboard_request(
+                server, "POST", "/login",
+                body={"username": "test-user", "password": "incorrect-password"},
+                headers={"Origin": origin},
+            )
+            assert status == 401
+        status, _, _ = _dashboard_request(
+            server, "POST", "/login",
+            body={"username": "test-user", "password": "incorrect-password"},
+            headers={"Origin": origin},
+        )
+        assert status == 429
+    finally:
+        server.stop()
+
+
+def test_http_dashboard_session_expiry_is_enforced():
+    import time
+
+    server, password = _start_test_dashboard()
+    try:
+        cookie, _ = _login_test_dashboard(server, password)
+        token = cookie.split("=", 1)[1]
+        server._sessions[token]["expires"] = time.time() - 1
+        status, _, _ = _dashboard_request(
+            server, "GET", "/api/status", headers={"Cookie": cookie}
+        )
+        assert status == 401
+        assert token not in server._sessions
+    finally:
+        server.stop()
