@@ -48,11 +48,11 @@ Existing unit tests cover important validation, redaction, search mapping and si
 
 Build 389 should be a maintenance and release-engineering candidate, not a feature/UI redesign.
 
-1. Add deterministic remote-dashboard HTTP regression tests for the security boundaries listed above.
-2. Generate an SBOM and exact dependency inventory from the same Windows build that produces the installer and portable artifact.
-3. Produce a licence audit report distinguishing shipped runtime components from build-only tooling; include the required licence texts/notices and verify the pinned Byparr source/corresponding-source package.
-4. Keep package-size reporting and SHA-256 checksums alongside the candidate artifacts.
-5. Re-run all CI checks, Windows packaging/engine smoke tests, then repeat the core Build 388 user test before treating Build 389 as validated.
+1. **Implemented:** deterministic HTTP regression tests for login, CSRF, logout, expiry, Host/Origin rejection, oversized/chunked request bodies and login throttling. The 78-test Manager suite passed on Windows, Ubuntu and macOS in CI (run 395).
+2. **Implemented in the Windows workflow; awaiting a clean full run:** separate CycloneDX SBOMs for the installed Manager runtime and pinned Byparr engine runtime, with best-effort licence-text gathering.
+3. **Implemented in the Windows workflow; awaiting artifact inspection:** a CSV identifying declared/missing package licence metadata, a SHA-256 inventory of the bundled browser runtime, and a separate archive of the exact pinned Byparr source with its lockfile and retrieval script. These automated outputs are evidence for human review, not legal clearance.
+4. **Implemented in the Windows workflow; awaiting artifact inspection:** a release-candidate staging bundle containing installer, portable ZIP, source archive, SBOMs, notices and SHA-256 checksums.
+5. **Still required:** inspect the exact generated SBOM/license report and browser runtime; resolve every licence/copyright/source obligation; complete any needed notice or source-bundle corrections; then repeat Windows installer/engine smoke tests and the core Build 388 user test on the exact candidate.
 
 Do not add unrelated UI features, upgrade the pinned Byparr engine, change the remote-access trust model, or weaken any existing security control in this build.
 
