@@ -112,7 +112,9 @@ class RemoteDashboardServer:
     """Small authenticated HTTP dashboard, restricted to a configured Tailscale IP."""
 
     def __init__(self, host, port, username, salt, verifier, status_provider,
-                 action_handler, log_provider=None, audit_logger=None, search_handler=None, grab_handler=None):
+                 action_handler, log_provider=None, audit_logger=None, search_handler=None, grab_handler=None,
+                 radarr_movie_search_handler=None, radarr_release_search_handler=None,
+                 radarr_grab_handler=None):
         self.host, self.port = validate_tailscale_binding(host, port)
         if not isinstance(username, str) or not re.fullmatch(r"[A-Za-z0-9_.@-]{1,64}", username):
             raise ValueError("Remote dashboard username must be 1–64 safe characters.")
@@ -125,6 +127,9 @@ class RemoteDashboardServer:
         self.audit_logger = audit_logger or (lambda _message: None)
         self.search_handler = search_handler or (lambda _query, _category: [])
         self.grab_handler = grab_handler
+        self.radarr_movie_search_handler = radarr_movie_search_handler
+        self.radarr_release_search_handler = radarr_release_search_handler
+        self.radarr_grab_handler = radarr_grab_handler
         self._searches = []
         self._sessions = {}
         self._failures = {}
@@ -436,6 +441,71 @@ class RemoteDashboardServer:
                         f"Release grab accepted for user '{owner.username}' from {self.client_address[0]}."
                     )
                     self._json(200, {"ok": True, "message": "Prowlarr accepted the release grab."})
+                    return
+                if path == "/api/radarr/movies":
+                    query = payload.get("query") if isinstance(payload, dict) else None
+                    if not isinstance(query, str):
+                        self._json(400, {"error": "Enter a movie title."})
+                        return
+                    query = query.strip()
+                    if len(query) < 2 or len(query) > 120 or any(ord(char) < 32 for char in query):
+                        self._json(400, {"error": "Movie searches must be 2–120 characters."})
+                        return
+                    if owner.radarr_movie_search_handler is None:
+                        self._json(503, {"error": "Radarr release search is not configured."})
+                        return
+                    try:
+                        results = owner.radarr_movie_search_handler(query)
+                        if not isinstance(results, list):
+                            raise TypeError("Unexpected Radarr movie response")
+                    except (RuntimeError, OSError, ValueError, TypeError):
+                        owner.audit(
+                            f"Radarr movie search failed for user '{owner.username}' from {self.client_address[0]}."
+                        )
+                        self._json(502, {"error": "Radarr movie search failed. Check its connection and API key."})
+                        return
+                    self._json(200, {"results": results[:50]})
+                    return
+                if path == "/api/radarr/releases":
+                    movie_handle = payload.get("movie_handle") if isinstance(payload, dict) else None
+                    if not isinstance(movie_handle, str) or not 20 <= len(movie_handle) <= 100:
+                        self._json(400, {"error": "Choose a valid Radarr movie."})
+                        return
+                    if owner.radarr_release_search_handler is None:
+                        self._json(503, {"error": "Radarr release search is not configured."})
+                        return
+                    try:
+                        results = owner.radarr_release_search_handler(movie_handle)
+                        if not isinstance(results, list):
+                            raise TypeError("Unexpected Radarr release response")
+                    except (RuntimeError, OSError, ValueError, TypeError):
+                        owner.audit(
+                            f"Radarr release search failed for user '{owner.username}' from {self.client_address[0]}."
+                        )
+                        self._json(502, {"error": "Radarr could not retrieve releases. Search for the movie again and check the connection."})
+                        return
+                    self._json(200, {"results": results[:100]})
+                    return
+                if path == "/api/radarr/grab":
+                    release_handle = payload.get("release_handle") if isinstance(payload, dict) else None
+                    if not isinstance(release_handle, str) or not 20 <= len(release_handle) <= 100:
+                        self._json(400, {"error": "Choose a valid Radarr release."})
+                        return
+                    if owner.radarr_grab_handler is None:
+                        self._json(503, {"error": "Radarr release grabbing is not configured."})
+                        return
+                    try:
+                        owner.radarr_grab_handler(release_handle)
+                    except (RuntimeError, OSError, ValueError, TypeError):
+                        owner.audit(
+                            f"Radarr release grab failed for user '{owner.username}' from {self.client_address[0]}."
+                        )
+                        self._json(502, {"error": "Radarr could not accept the selected release. No alternate release was selected."})
+                        return
+                    owner.audit(
+                        f"Radarr release grab accepted for user '{owner.username}' from {self.client_address[0]}."
+                    )
+                    self._json(200, {"ok": True, "message": "Radarr accepted the selected release."})
                     return
                 if path == "/logout":
                     with owner._lock:
