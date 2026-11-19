@@ -65,3 +65,23 @@ def test_engine_stop_timeout_is_cancellable(qtbot):
     controller._on_finished(0, QProcess.NormalExit)
 
     assert not controller._stop_timeout_timer.isActive()
+
+def test_engine_health_polling_slows_after_api_is_ready(monkeypatch):
+    controller = EngineController()
+    monkeypatch.setattr(EngineController, "is_running", property(lambda _self: True))
+
+    assert controller.health_timer.interval() == 1500
+    controller._on_health_result(200, 12)
+
+    assert controller._status == "Running"
+    assert controller._api_ready_logged is True
+    assert controller.health_timer.interval() == 30_000
+    assert controller.health_timer.isActive()
+
+    controller._on_health_result(None, 800)
+    assert controller._status == "API unavailable"
+    assert controller.health_timer.interval() == 10_000
+
+    controller._on_health_result(200, 15)
+    assert controller._status == "Running"
+    assert controller.health_timer.interval() == 30_000
