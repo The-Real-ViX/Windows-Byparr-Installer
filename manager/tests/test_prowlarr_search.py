@@ -132,3 +132,18 @@ def test_grab_rejects_expired_or_unknown_result():
     with pytest.raises(ValueError, match="expired"):
         client.grab("expired-result-handle")
     assert "expired-result-handle" not in client._releases
+
+
+def test_search_rejects_credentials_and_query_in_base_url():
+    for address in (
+        "http://user:pass@127.0.0.1:9696",
+        "http://127.0.0.1:9696?apiKey=secret",
+        "http://127.0.0.1:9696/#fragment",
+    ):
+        client = ProwlarrSearchClient(address, "key")
+        try:
+            client.search("test")
+        except ValueError as error:
+            assert str(error) == "Invalid Prowlarr address."
+        else:
+            raise AssertionError("Unsafe Prowlarr base URL was accepted")
