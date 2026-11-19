@@ -93,7 +93,7 @@ class RadarrReleaseClient:
             raise ValueError("Enter a movie title (maximum 200 characters).")
         payload = self._request("GET", "movie", params={"term": query})
         if not isinstance(payload, list):
-            raise RuntimeError("Radarr returned an unexpected movie list.")
+            raise TypeError("Radarr returned an unexpected movie list.")
         results = []
         for movie in payload[:50]:
             if not isinstance(movie, dict) or not isinstance(movie.get("id"), int):
@@ -118,7 +118,7 @@ class RadarrReleaseClient:
             "GET", "release", params={"movieId": movie["movie_id"]}
         )
         if not isinstance(payload, list):
-            raise RuntimeError("Radarr returned an unexpected release list.")
+            raise TypeError("Radarr returned an unexpected release list.")
         results = []
         for release in payload[:100]:
             if not isinstance(release, dict):
@@ -148,7 +148,7 @@ class RadarrReleaseClient:
                 "protocol": self._clean_text(release.get("protocol"), 40),
                 "seeders": release.get("seeders") if isinstance(release.get("seeders"), int) else None,
                 "quality": quality_label,
-                "approved": bool(release.get("approved", True)),
+                "approved": bool(release.get("approved", False)),
                 "rejections": [
                     self._clean_text(reason, 180)
                     for reason in (release.get("rejections") or [])
