@@ -132,6 +132,9 @@ jobs:
         with:
           python-version: "3.14"
 
+      - name: Apply isolated upstream dependency candidate
+        run: python scripts/apply_upstream_dependency_candidate.py
+
       - name: Install pinned CycloneDX generator for engine SBOM
         run: python -m pip install cyclonedx-bom==7.6.0
 
@@ -341,7 +344,7 @@ jobs:
           Copy-Item "dist\ByparrManager\LICENSE.txt" $stage
           Copy-Item "dist\ByparrManager\Manager-README.md" $stage
           @"
-          Build 389 release-candidate evidence bundle
+          Build $env:GITHUB_RUN_NUMBER release-candidate evidence bundle
           This is a CI candidate, not an approved public release.
           Do not redistribute until the LICENSE-REVIEW-REQUIRED.csv and all shipped native/browser components have been reviewed and applicable source and licence obligations are confirmed.
           The SBOM files inventory Python runtime dependencies; the browser-runtime file manifest records hashes but is not a complete browser third-party licence inventory.
