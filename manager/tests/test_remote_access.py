@@ -251,7 +251,7 @@ def test_log_redaction_masks_spaced_api_key_labels():
     assert "[REDACTED]" in line
 
 
-def _start_test_dashboard(monkeypatch, tmp_path, **overrides):
+def _start_test_dashboard(**overrides):
     """Start the real HTTP handler on loopback for deterministic security tests."""
     import socket
     from remote_access import RemoteDashboardServer
@@ -298,9 +298,7 @@ def _dashboard_request(server, method, path, *, body=None, headers=None):
 
 
 def _login_test_dashboard(server, password):
-    import json
-
-    status, headers, body = _dashboard_request(
+    status, headers, _body = _dashboard_request(
         server, "POST", "/login",
         body={"username": "test-user", "password": password},
         headers={"Origin": f"http://{server.host}:{server.port}"},
@@ -313,8 +311,6 @@ def _login_test_dashboard(server, password):
 
 
 def test_http_dashboard_login_csrf_logout_and_session_invalidation():
-    from remote_access import RemoteDashboardServer
-
     server, password = _start_test_dashboard()
     try:
         status, _, _ = _dashboard_request(server, "GET", "/api/status")
