@@ -132,6 +132,9 @@ jobs:
         with:
           python-version: "3.14"
 
+      - name: Install pinned CycloneDX generator for engine SBOM
+        run: python -m pip install cyclonedx-bom==7.6.0
+
       - name: Install locked Byparr engine dependencies
         working-directory: vendor/Byparr
         shell: pwsh
