@@ -48,7 +48,10 @@ class ProwlarrSearchClient:
     def search(self, query: str, category: str = "all") -> list[dict]:
         """Search configured indexers using a safe Prowlarr search mode/category."""
         parsed = httpx.URL(self.base_url)
-        if parsed.scheme not in ("http", "https") or not parsed.host:
+        if (
+            parsed.scheme not in ("http", "https") or not parsed.host
+            or parsed.username or parsed.password or parsed.query or parsed.fragment
+        ):
             raise ValueError("Invalid Prowlarr address.")
         search_category = SEARCH_CATEGORIES.get(category)
         if search_category is None:
