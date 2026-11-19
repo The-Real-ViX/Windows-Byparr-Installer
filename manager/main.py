@@ -1,6 +1,9 @@
 """Cross-platform desktop entry point for Byparr Manager."""
 
 import ipaddress
+import logging
+from logging.handlers import RotatingFileHandler
+import os
 import re
 import secrets
 import threading
@@ -9,6 +12,57 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+
+
+def configure_startup_logger():
+    """Create a rotating diagnostic log before Qt or the main window starts."""
+    if os.name == "nt":
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+    else:
+        base = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
+    log_dir = base / "RedHeX" / "ByparrManager" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "ByparrManager-startup.log"
+    handler = RotatingFileHandler(
+        log_path, maxBytes=2 * 1024 * 1024, backupCount=3, encoding="utf-8"
+    )
+    handler.setFormatter(logging.Formatter(
+        "%(asctime)s %(levelname)s [%(threadName)s] %(message)s"
+    ))
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    root.handlers.clear()
+    root.addHandler(handler)
+    logger = logging.getLogger("byparr_manager")
+    logger.info("Startup diagnostics initialised.")
+    logger.info("Diagnostic log location: %s", log_path)
+    return logger, log_path
+
+
+STARTUP_LOGGER, STARTUP_LOG_PATH = configure_startup_logger()
+
+
+def _log_uncaught_exception(exc_type, exc_value, exc_traceback):
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+    STARTUP_LOGGER.critical(
+        "Uncaught application exception",
+        exc_info=(exc_type, exc_value, exc_traceback),
+    )
+
+
+sys.excepthook = _log_uncaught_exception
+
+
+def _log_uncaught_thread_exception(args):
+    STARTUP_LOGGER.critical(
+        "Uncaught worker-thread exception",
+        exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+    )
+
+
+threading.excepthook = _log_uncaught_thread_exception
 
 import httpx
 from PySide6.QtCore import QObject, QSettings, QStandardPaths, Qt, QThread, Signal
@@ -1555,7 +1609,7 @@ class ByparrManager(QMainWindow):
         log_view = QTextEdit()
         self.log_view = log_view
         log_view.setReadOnly(True)
-        log_view.setMaximumBlockCount(2000)
+        log_view.document().setMaximumBlockCount(2000)
         log_view.setMinimumHeight(360)
         log_view.setPlainText(
             "Byparr Manager started.\n"
@@ -1633,7 +1687,11 @@ if __name__ == "__main__":
         sys.exit(run_credential_smoke_test())
     if "--full-uninstall-cleanup" in sys.argv:
         sys.exit(run_full_uninstall_cleanup())
+    STARTUP_LOGGER.info("Creating Qt application.")
     app = QApplication(sys.argv)
+    STARTUP_LOGGER.info("Creating Byparr Manager main window (build %s).", BUILD_NUMBER)
     window = ByparrManager()
+    STARTUP_LOGGER.info("Main window created successfully.")
     window.show()
+    STARTUP_LOGGER.info("Main window displayed; entering Qt event loop.")
     sys.exit(app.exec())
