@@ -734,6 +734,7 @@ class ByparrManager(QMainWindow):
             "Restarting": "#e7bd70",
             "Engine files missing": "#e57373",
             "Failed to start": "#e57373",
+            "API unavailable": "#e57373",
         }
         self.status_dot.setStyleSheet(
             f"color: {colors.get(status, '#e7bd70')}; font-size: 18px;"
@@ -741,8 +742,12 @@ class ByparrManager(QMainWindow):
         self.start_button.setEnabled(status in {
             "Stopped", "Engine files missing", "Failed to start"
         })
-        self.stop_button.setEnabled(status in {"Starting", "Running", "Restarting"})
-        self.restart_button.setEnabled(status in {"Starting", "Running"})
+        self.stop_button.setEnabled(
+            status in {"Starting", "Running", "API unavailable", "Restarting"}
+        )
+        self.restart_button.setEnabled(
+            status in {"Starting", "Running", "API unavailable"}
+        )
         if status in {"Stopped", "Engine files missing", "Failed to start"}:
             self.browser_health_status.setText("Not checked")
             self.browser_health_status.setStyleSheet("color: #98a5b8;")
