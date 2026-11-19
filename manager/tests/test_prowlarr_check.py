@@ -90,3 +90,29 @@ def test_reports_missing_api_key():
     worker.result.connect(lambda *values: captured.append(values))
     worker.run()
     assert captured[0] == (False, "API key not saved", False, "Not checked")
+
+
+def test_prowlarr_requests_disable_redirects_and_environment_proxies(monkeypatch):
+    calls = []
+
+    def fake_get(url, **kwargs):
+        calls.append(kwargs)
+        return response(200, [])
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    worker = ProwlarrIntegrationCheckWorker("http://127.0.0.1:9696", "key")
+    worker.run()
+    assert calls[0]["follow_redirects"] is False
+    assert calls[0]["trust_env"] is False
+
+
+def test_prowlarr_worker_emits_status_and_duration_diagnostic(monkeypatch):
+    monkeypatch.setattr(httpx, "get", lambda *args, **kwargs: response(200, []))
+    worker = ProwlarrIntegrationCheckWorker("http://127.0.0.1:9696", "key")
+    captured = []
+    worker.diagnostic.connect(lambda *values: captured.append(values))
+    worker.run()
+    assert captured[0][0] == "Prowlarr"
+    assert captured[0][1] is True
+    assert captured[0][2] == 200
+    assert captured[0][3] >= 0
