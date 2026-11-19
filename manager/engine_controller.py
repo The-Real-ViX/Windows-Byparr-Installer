@@ -13,6 +13,7 @@ from PySide6.QtCore import (
     QProcess,
     QProcessEnvironment,
     QStandardPaths,
+    QThread,
     QTimer,
     Signal,
 )
