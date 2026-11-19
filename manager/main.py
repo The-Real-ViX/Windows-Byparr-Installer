@@ -17,10 +17,23 @@ from pathlib import Path
 def configure_startup_logger():
     """Create a rotating diagnostic log before Qt or the main window starts."""
     if os.name == "nt":
-        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+        # Respect Windows Desktop redirection, including OneDrive-managed desktops.
+        desktop = None
+        try:
+            import winreg
+
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders",
+            ) as key:
+                desktop_value, _ = winreg.QueryValueEx(key, "Desktop")
+            desktop = Path(os.path.expandvars(desktop_value))
+        except (OSError, ImportError):
+            desktop = Path.home() / "Desktop"
+        log_dir = desktop / "ByparrManager-Logs"
     else:
         base = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
-    log_dir = base / "RedHeX" / "ByparrManager" / "logs"
+        log_dir = base / "RedHeX" / "ByparrManager" / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / "ByparrManager-startup.log"
     handler = RotatingFileHandler(
