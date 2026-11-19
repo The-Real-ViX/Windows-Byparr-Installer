@@ -2,7 +2,11 @@ from pathlib import Path
 
 from PySide6.QtCore import QProcess, QStandardPaths
 
-from engine_controller import ApiHealthCheckWorker, EngineController, is_routine_api_probe_log_line
+from engine_controller import (
+    ApiHealthCheckWorker,
+    EngineController,
+    is_routine_api_probe_log_line,
+)
 
 
 def test_engine_executable_is_relative_to_application_root(tmp_path: Path):
@@ -66,6 +70,7 @@ def test_engine_stop_timeout_is_cancellable(qtbot):
 
     assert not controller._stop_timeout_timer.isActive()
 
+
 def test_engine_health_polling_slows_after_api_is_ready(monkeypatch):
     controller = EngineController()
     monkeypatch.setattr(EngineController, "is_running", property(lambda _self: True))
@@ -85,6 +90,7 @@ def test_engine_health_polling_slows_after_api_is_ready(monkeypatch):
     controller._on_health_result(200, 15)
     assert controller._status == "Running"
     assert controller.health_timer.interval() == 30_000
+
 
 def test_api_health_probe_runs_in_worker_thread(qtbot, monkeypatch):
     class Response:
