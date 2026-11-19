@@ -249,3 +249,40 @@ def test_log_redaction_masks_spaced_api_key_labels():
     line = redact_log_line("API key=never-log-this")
     assert "never-log-this" not in line
     assert "[REDACTED]" in line
+
+
+
+def test_manual_radarr_release_dashboard_requires_explicit_confirmation():
+    from remote_access import DASHBOARD
+
+    assert "Manual movie release selection — Radarr" in DASHBOARD
+    assert "Find movie in Radarr" in DASHBOARD
+    assert "View Radarr releases" in DASHBOARD
+    assert "Select this release" in DASHBOARD
+    assert "window.confirm(prompt)" in DASHBOARD
+    assert "fetch('/api/radarr/movies'" in DASHBOARD
+    assert "fetch('/api/radarr/releases'" in DASHBOARD
+    assert "fetch('/api/radarr/grab'" in DASHBOARD
+    assert "No alternate release will be selected." in DASHBOARD
+    assert "Radarr supplies the release list" in DASHBOARD
+
+
+def test_remote_server_accepts_optional_radarr_handlers():
+    from remote_access import RemoteDashboardServer
+
+    calls = []
+    server = RemoteDashboardServer(
+        "100.101.20.30", 8765, "test-user", "00" * 16, "11" * 32,
+        lambda: {}, lambda _action: None,
+        radarr_movie_search_handler=lambda query: calls.append(("movie", query)) or [],
+        radarr_release_search_handler=lambda handle: calls.append(("release", handle)) or [],
+        radarr_grab_handler=lambda handle: calls.append(("grab", handle)),
+    )
+    assert server.radarr_movie_search_handler("Example") == []
+    assert server.radarr_release_search_handler("opaque-movie-handle-12345") == []
+    server.radarr_grab_handler("opaque-release-handle-12345")
+    assert calls == [
+        ("movie", "Example"),
+        ("release", "opaque-movie-handle-12345"),
+        ("grab", "opaque-release-handle-12345"),
+    ]
