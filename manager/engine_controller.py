@@ -254,7 +254,7 @@ class EngineController(QObject):
         if self._health_worker is not None and self._health_worker.isRunning():
             # The probe has a sub-second network timeout; wait so Qt never
             # destroys a controller while its child QThread is still running.
-            self._health_worker.wait(1000)
+            self._health_worker.wait()
         self._health_worker = None
         if self.is_running:
             self.process.terminate()
