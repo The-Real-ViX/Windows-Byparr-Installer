@@ -4,7 +4,7 @@ import subprocess
 import tomllib
 from pathlib import Path
 
-PROJECT = Path("vendor/Byparr")
+PROJECT = (Path(__file__).resolve().parents[2] / "vendor" / "Byparr")
 PYPROJECT = PROJECT / "pyproject.toml"
 
 replacements = {
