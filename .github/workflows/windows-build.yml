@@ -95,6 +95,22 @@ jobs:
           if ($process.ExitCode -ne 0) { throw "Packaged credential-vault test failed with exit code $($process.ExitCode)." }
           Write-Host "SUCCESS: packaged Manager saved, read, and deleted a Windows Credential Manager test entry."
 
+      - name: Prepare isolated Manager runtime inventory environment
+        shell: pwsh
+        run: |
+          python -m venv .runtime-sbom-venv
+          .\.runtime-sbom-venv\Scripts\python.exe -m pip install --upgrade pip
+          .\.runtime-sbom-venv\Scripts\python.exe -m pip install .
+
+      - name: Install pinned CycloneDX SBOM generator
+        run: python -m pip install cyclonedx-bom==7.6.0
+
+      - name: Generate Manager runtime SBOM
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist\ByparrManager | Out-Null
+          python -m cyclonedx_py environment .\.runtime-sbom-venv\Scripts\python.exe --pyproject pyproject.toml --gather-license-texts --output-file dist\ByparrManager\SBOM-manager-runtime.cdx.json
+
       - name: Include project licence and notices
         shell: pwsh
         run: |
@@ -130,6 +146,28 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path $env:INVISIBLE_PLAYWRIGHT_ENGINE_DIR, $env:INVISIBLE_PLAYWRIGHT_CACHE_DIR | Out-Null
           uv run python -m invisible_playwright fetch
+
+      - name: Generate Byparr engine runtime SBOM
+        shell: pwsh
+        run: |
+          $enginePython = Join-Path $env:GITHUB_WORKSPACE "vendor\Byparr\.venv\Scripts\python.exe"
+          if (-not (Test-Path $enginePython)) { throw "Pinned engine virtual environment not found for SBOM generation." }
+          python -m cyclonedx_py environment $enginePython --pyproject ..\vendor\Byparr\pyproject.toml --gather-license-texts --output-file dist\ByparrManager\SBOM-byparr-engine.cdx.json
+
+      - name: Inventory bundled browser runtime files
+        shell: pwsh
+        run: |
+          $browserRoot = Join-Path $env:GITHUB_WORKSPACE "manager\dist\ByparrManager\engine\browser-engine"
+          if (-not (Test-Path $browserRoot)) { throw "Bundled browser runtime directory is missing." }
+          $inventory = Get-ChildItem -LiteralPath $browserRoot -File -Recurse | ForEach-Object {
+            [PSCustomObject]@{
+              path = $_.FullName.Substring($browserRoot.Length + 1)
+              size_bytes = $_.Length
+              sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            }
+          }
+          $inventory | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath "dist\ByparrManager\SBOM-browser-runtime-files.json" -Encoding utf8
+          Write-Host ("Inventoried {0} bundled browser runtime files." -f $inventory.Count)
 
       - name: Install engine packager
         working-directory: vendor/Byparr
