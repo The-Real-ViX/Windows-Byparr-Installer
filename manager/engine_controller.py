@@ -182,12 +182,15 @@ class EngineController(QObject):
         worker = ApiHealthCheckWorker(self.port, self)
         self._health_worker = worker
         worker.result.connect(self._on_health_result)
-        worker.finished.connect(self._on_health_worker_finished)
+        worker.finished.connect(
+            lambda current=worker: self._on_health_worker_finished(current)
+        )
         worker.finished.connect(worker.deleteLater)
         worker.start()
 
-    def _on_health_worker_finished(self) -> None:
-        self._health_worker = None
+    def _on_health_worker_finished(self, worker) -> None:
+        if self._health_worker is worker:
+            self._health_worker = None
 
     def _on_health_result(self, status_code, elapsed: int) -> None:
         # A late probe must never mark an already-stopped engine as Running.
