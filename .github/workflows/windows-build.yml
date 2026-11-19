@@ -337,7 +337,6 @@ jobs:
           Copy-Item "dist\ByparrManager\THIRD_PARTY_NOTICES.md" $stage
           Copy-Item "dist\ByparrManager\LICENSE.txt" $stage
           Copy-Item "dist\ByparrManager\Manager-README.md" $stage
-          Copy-Item "dist\ByparrManager\SBOM-browser-runtime-files.json" $stage
           @"
           Build 389 release-candidate evidence bundle
           This is a CI candidate, not an approved public release.
