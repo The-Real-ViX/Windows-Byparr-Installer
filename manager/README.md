@@ -2,7 +2,7 @@
 
 Byparr Manager is an independent community-built Windows desktop control centre for the upstream [Byparr](https://github.com/ThePhaseless/Byparr) engine.
 
-**Version:** 0.4.0 Beta  
+**Version:** 0.5.0 Beta  
 **Platform:** Windows 11 x64
 
 ## Main features
