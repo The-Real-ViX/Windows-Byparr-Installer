@@ -317,7 +317,7 @@ def test_http_dashboard_login_csrf_logout_and_session_invalidation():
         assert status == 401
 
         cookie, csrf = _login_test_dashboard(server, password)
-        status, headers, body = _dashboard_request(
+        status, headers, _body = _dashboard_request(
             server, "GET", "/api/status", headers={"Cookie": cookie}
         )
         assert status == 200
