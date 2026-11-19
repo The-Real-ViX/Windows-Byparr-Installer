@@ -7,7 +7,7 @@ def test_browser_health_worker_reports_success(monkeypatch, qtbot):
     monkeypatch.setattr(
         httpx,
         "get",
-        lambda url, timeout: httpx.Response(
+        lambda url, timeout, **kwargs: httpx.Response(
             200,
             json={
                 "msg": "Byparr is working!",
@@ -44,7 +44,7 @@ def test_browser_health_worker_reports_http_error(monkeypatch, qtbot):
     monkeypatch.setattr(
         httpx,
         "get",
-        lambda url, timeout: httpx.Response(503, request=httpx.Request("GET", url)),
+        lambda url, timeout, **kwargs: httpx.Response(503, request=httpx.Request("GET", url)),
     )
     worker = BrowserHealthCheckWorker("http://127.0.0.1:8191")
 
