@@ -338,6 +338,14 @@ jobs:
           Copy-Item "dist\ByparrManager\LICENSE.txt" $stage
           Copy-Item "dist\ByparrManager\Manager-README.md" $stage
           Copy-Item "dist\ByparrManager\SBOM-browser-runtime-files.json" $stage
+          @"
+          Build 389 release-candidate evidence bundle
+          This is a CI candidate, not an approved public release.
+          Do not redistribute until the LICENSE-REVIEW-REQUIRED.csv and all shipped native/browser components have been reviewed and applicable source and licence obligations are confirmed.
+          The SBOM files inventory Python runtime dependencies; the browser-runtime file manifest records hashes but is not a complete browser third-party licence inventory.
+          Build identity: $env:GITHUB_SHA
+          Workflow run: $env:GITHUB_RUN_ID
+          "@ | Set-Content -LiteralPath (Join-Path $stage "RELEASE-STATUS.txt") -Encoding utf8
           $hashLines = Get-ChildItem -LiteralPath $stage -File | Where-Object Name -ne "SHA256SUMS.txt" | Sort-Object Name | ForEach-Object {
             $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             "$hash  $($_.Name)"
