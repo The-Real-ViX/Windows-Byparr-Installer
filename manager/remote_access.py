@@ -678,6 +678,14 @@ box-sizing:border-box;animation:spin .8s linear infinite;flex:none}.spinner[hidd
 <p id="search-message" role="status" aria-live="polite" aria-atomic="true">Search results will appear here.</p></div>
 <div id="search-results"></div><h3>Recent searches</h3><div id="search-history" class="muted">No searches yet.</div>
 </section>
+<section class="panel"><h2>Manual movie release selection — Radarr</h2>
+<p class="muted">Search movies already in your Radarr library. Radarr supplies the release list and handles the selected download through its configured client. Searching is read-only.</p>
+<form id="radarr-form"><label for="radarr-query">Movie title</label>
+<input id="radarr-query" name="query" minlength="2" maxlength="120" placeholder="Search your Radarr movie library" required>
+<button id="radarr-search-button" type="submit">Find movie in Radarr</button></form>
+<p id="radarr-message" role="status" aria-live="polite">Search for a movie to see its available releases.</p>
+<div id="radarr-movies"></div><div id="radarr-releases"></div>
+</section>
 <section class="panel"><h2>Recent logs</h2>
 <pre id="logs">Loading…</pre></section><button id="logout">Sign out</button>
 </main><script nonce="__CSP_NONCE__">let csrf='';async function refresh(){try{const r=await fetch('/api/status',{cache:'no-store',credentials:'same-origin'});
@@ -757,6 +765,70 @@ renderSearchResults(data);setSearchMessage('Found '+data.count+' '+(data.categor
 finally{if(searchTimer!==null){clearInterval(searchTimer);searchTimer=null;}
 searchInFlight=false;button.disabled=false;clearButton.disabled=false;button.textContent='Search Prowlarr';spinner.hidden=true;
 document.querySelector('#search-results').removeAttribute('aria-busy');}});
+let radarrBusy=false;
+function radarrMessage(message){document.querySelector('#radarr-message').textContent=message;}
+function renderRadarrMovies(items){const target=document.querySelector('#radarr-movies');target.replaceChildren();
+document.querySelector('#radarr-releases').replaceChildren();
+if(!Array.isArray(items)||!items.length){target.textContent='No matching movies found in Radarr.';return;}
+for(const movie of items){const card=document.createElement('div');card.className='result';
+const title=document.createElement('strong');title.textContent=movie.title+(movie.year?' ('+movie.year+')':'');card.appendChild(title);
+const meta=document.createElement('div');meta.className='muted';meta.textContent=(movie.has_file?'Already in library':'No file yet')+' · '+(movie.monitored?'Monitored':'Unmonitored');card.appendChild(meta);
+const choose=document.createElement('button');choose.type='button';choose.textContent='View Radarr releases';
+choose.addEventListener('click',()=>loadRadarrReleases(movie));card.appendChild(choose);target.appendChild(card);}}
+function formatReleaseSize(value){if(typeof value!=='number'||value<0)return 'Size unknown';
+const units=['B','KB','MB','GB','TB'];let amount=value,index=0;
+while(amount>=1024&&index<units.length-1){amount/=1024;index++;}
+return amount.toFixed(1)+' '+units[index];}
+function renderRadarrReleases(movie,items){const target=document.querySelector('#radarr-releases');target.replaceChildren();
+const heading=document.createElement('h3');heading.textContent='Releases for '+movie.title+(movie.year?' ('+movie.year+')':'');target.appendChild(heading);
+if(!Array.isArray(items)||!items.length){const empty=document.createElement('p');empty.textContent='Radarr did not return any releases for this movie.';target.appendChild(empty);return;}
+for(const release of items){const card=document.createElement('div');card.className='result';
+const title=document.createElement('strong');title.textContent=release.title||'Untitled release';card.appendChild(title);
+const meta=document.createElement('div');meta.className='muted';
+meta.textContent=[release.quality||'',formatReleaseSize(release.size),release.indexer||'Unknown indexer',
+release.protocol||'', 'Seeds: '+(release.seeders??'—')].filter(Boolean).join(' · ');card.appendChild(meta);
+if(release.approved){const select=document.createElement('button');select.type='button';select.textContent='Select this release';
+select.addEventListener('click',()=>confirmRadarrGrab(movie,release,select));card.appendChild(select);}
+else{const rejected=document.createElement('p');rejected.className='muted';
+rejected.textContent='Radarr will not accept this release'+(Array.isArray(release.rejections)&&release.rejections.length?': '+release.rejections.join('; '):'.');
+card.appendChild(rejected);}
+target.appendChild(card);}}
+async function loadRadarrReleases(movie){if(radarrBusy)return;if(!csrf){radarrMessage('Dashboard session is not ready. Refresh and try again.');return;}
+radarrBusy=true;radarrMessage('Retrieving releases from Radarr…');
+try{const r=await fetch('/api/radarr/releases',{method:'POST',credentials:'same-origin',
+headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({movie_handle:movie.movie_handle})});
+const data=await r.json();if(!r.ok)throw new Error(data.error||('HTTP '+r.status));
+renderRadarrReleases(movie,data.results);radarrMessage('Radarr returned '+(data.results||[]).length+' release choices. Nothing has been sent.');}
+catch(error){radarrMessage('Could not retrieve Radarr releases: '+error.message);}
+finally{radarrBusy=false;}}
+async function confirmRadarrGrab(movie,release,button){if(radarrBusy)return;
+const destination='Radarr → its configured download client';
+const prompt='Confirm this exact release?\n\nMovie: '+movie.title+(movie.year?' ('+movie.year+')':'')+
+'\nRelease: '+release.title+'\nQuality: '+(release.quality||'Not reported')+
+'\nSize: '+formatReleaseSize(release.size)+'\nDestination: '+destination+
+'\n\nOnly this release will be submitted. No alternate release will be selected.';
+if(!window.confirm(prompt))return;
+if(!csrf){radarrMessage('Dashboard session is not ready. Refresh and try again.');return;}
+radarrBusy=true;button.disabled=true;button.textContent='Sending to Radarr…';radarrMessage('Sending the selected release to Radarr…');
+try{const r=await fetch('/api/radarr/grab',{method:'POST',credentials:'same-origin',
+headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({release_handle:release.release_handle})});
+const data=await r.json();if(!r.ok)throw new Error(data.error||('HTTP '+r.status));
+button.textContent='Accepted by Radarr';radarrMessage(data.message||'Radarr accepted the selected release.');}
+catch(error){button.disabled=false;button.textContent='Select this release';radarrMessage('Radarr did not confirm the selected release: '+error.message+'. No alternate release was selected.');}
+finally{radarrBusy=false;}}
+document.querySelector('#radarr-form').addEventListener('submit',async event=>{event.preventDefault();
+if(radarrBusy)return;const query=document.querySelector('#radarr-query').value.trim();
+if(query.length<2){radarrMessage('Enter at least 2 characters.');return;}
+if(!csrf){radarrMessage('Dashboard session is not ready. Refresh and try again.');return;}
+radarrBusy=true;const button=document.querySelector('#radarr-search-button');button.disabled=true;button.textContent='Searching…';
+radarrMessage('Searching your Radarr movie library…');document.querySelector('#radarr-movies').replaceChildren();
+document.querySelector('#radarr-releases').replaceChildren();
+try{const r=await fetch('/api/radarr/movies',{method:'POST',credentials:'same-origin',
+headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({query})});
+const data=await r.json();if(!r.ok)throw new Error(data.error||('HTTP '+r.status));
+renderRadarrMovies(data.results);radarrMessage('Found '+(data.results||[]).length+' matching movies in Radarr. Select one to view releases.');}
+catch(error){radarrMessage('Radarr movie search failed: '+error.message);}
+finally{radarrBusy=false;button.disabled=false;button.textContent='Find movie in Radarr';}});
 async function act(action){try{const r=await fetch('/api/action',{method:'POST',credentials:'same-origin',headers:{
 'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({action})});if(!r.ok)throw new Error('HTTP '+r.status);setTimeout(refresh,700)}
 catch(error){document.querySelector('#engine').textContent='Action failed: '+error.message;}}
