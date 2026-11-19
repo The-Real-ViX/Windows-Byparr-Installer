@@ -1083,6 +1083,11 @@ class ByparrManager(QMainWindow):
             worker = ArrIntegrationCheckWorker(app_id, normalized, api_key, self)
             self.arr_workers[app_id] = worker
             worker.result.connect(self.handle_arr_check_result)
+            worker.diagnostic.connect(
+                lambda service, ok, code, elapsed, detail: self.append_api_diagnostic(
+                    ARR_APPS[service]["name"], ok, code, elapsed, detail
+                )
+            )
             worker.finished.connect(lambda: test_button.setEnabled(True))
             worker.start()
         test_button.clicked.connect(test_connection)
