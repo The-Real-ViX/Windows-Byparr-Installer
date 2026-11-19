@@ -36,7 +36,12 @@ from engine_controller import EngineController, is_routine_api_probe_log_line
 from prowlarr_check import ProwlarrIntegrationCheckWorker
 from prowlarr_search import ProwlarrSearchClient
 from secret_store import SecretStorageError, SecretStore
-from remote_access import RemoteDashboardServer, password_verifier, validate_tailscale_binding
+from remote_access import (
+    RemoteDashboardServer,
+    password_verifier,
+    redact_log_line,
+    validate_tailscale_binding,
+)
 
 
 DEFAULT_API_HOST = "127.0.0.1"
@@ -681,7 +686,8 @@ class ByparrManager(QMainWindow):
     def append_log(self, message):
         if is_routine_api_probe_log_line(message):
             return
-        self.remote_logs.append(str(message))
+        message = redact_log_line(message)
+        self.remote_logs.append(message)
         self.remote_logs = self.remote_logs[-100:]
         if hasattr(self, "log_view"):
             self.log_view.append(message)
