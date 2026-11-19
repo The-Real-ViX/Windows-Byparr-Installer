@@ -241,3 +241,11 @@ def test_release_grab_handle_is_single_use(monkeypatch):
     with pytest.raises(ValueError, match="already used"):
         client.grab(handle)
     assert len(calls) == 1
+
+
+def test_log_redaction_masks_spaced_api_key_labels():
+    from remote_access import redact_log_line
+
+    line = redact_log_line("API key=never-log-this")
+    assert "never-log-this" not in line
+    assert "[REDACTED]" in line
