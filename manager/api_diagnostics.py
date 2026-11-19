@@ -15,7 +15,7 @@ def format_api_diagnostic(service, success, status_code, elapsed_ms, detail):
         for c in str(detail) if c.isprintable() or c in "\r\n"
     )
     safe_detail = re.sub(
-        r"(?i)(api[_-]?key|password|token|secret|cookie)(\s*[:=]\s*)\S+",
+        r"(?i)(api[ _-]?key|password|token|secret|cookie)(\s*[:=]\s*)\S+",
         r"\1\2[REDACTED]", safe_detail,
     )[:180]
     http_status = f"HTTP {int(status_code)}" if status_code is not None else "HTTP n/a"
