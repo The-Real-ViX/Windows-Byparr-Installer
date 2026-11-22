@@ -23,12 +23,27 @@ Only perform these checks on devices in the intended private tailnet. Do not exp
 - [ ] Sign in from an iPad or other tailnet device.
 - [ ] Confirm the dashboard refreshes and displays engine/API/browser status.
 - [ ] Confirm Start, Stop, Restart and diagnostics controls work.
-- [ ] Search each category you use (Movies, TV, Audio/Music, Books, PC, Console).
-- [ ] Confirm search results show useful release details without exposing API keys or raw download/magnet URLs.
-- [ ] Select a result and confirm the prompt before sending it to Prowlarr's configured download client.
-- [ ] Confirm the release appears in qBittorrent and begins downloading.
+- [ ] Search each Prowlarr category you use (Movies, TV, Audio/Music, Books, PC, Console).
+- [ ] Confirm Prowlarr search results show useful release details without exposing API keys or raw download/magnet URLs.
+- [ ] Select a Prowlarr result and confirm the prompt before sending it to Prowlarr's configured download client.
+- [ ] Confirm the Prowlarr release appears in qBittorrent and begins downloading.
 - [ ] Sign out and confirm the dashboard requires login again.
 - [ ] Disable remote access and confirm the remote endpoint stops responding.
+
+## Radarr manual movie-release test pass
+
+This workflow is available only on the `feature/manual-arr-release-routing` branch and is not part of the default-branch build. Test it only after installing a Windows build produced from that branch and configuring Radarr.
+
+- [ ] Configure and test the Radarr address and API key in the Manager.
+- [ ] Open the authenticated remote dashboard over the private Tailscale network.
+- [ ] Search for a movie already in the Radarr library and select the intended movie.
+- [ ] Retrieve Radarr's release list and confirm the search itself does not start a download.
+- [ ] Check that release details show quality, size, indexer, protocol and seeders where supplied.
+- [ ] Confirm releases Radarr marks as unapproved cannot be selected.
+- [ ] Select an approved release and inspect the confirmation: movie, exact release, quality, size and Radarr's configured download-client destination.
+- [ ] Cancel once and verify Radarr receives no grab request.
+- [ ] Repeat and confirm one exact release; verify Radarr accepts it and routes it to its configured download client.
+- [ ] Confirm a failed or expired selection is reported and no alternate release is grabbed.
 
 ## When reporting a problem
 
